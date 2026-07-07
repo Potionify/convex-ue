@@ -1,0 +1,19 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "5.8",
+	"Category": "",
+	"Description": "Host project for validating and exercising the Convex plugin.",
+	"Modules": [
+		{
+			"Name": "ConvexExample",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "Convex",
+			"Enabled": true
+		}
+	]
+}

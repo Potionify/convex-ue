@@ -1,0 +1,23 @@
+# Unreal Engine generated directories
+Binaries/
+Intermediate/
+Saved/
+DerivedDataCache/
+Build/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.sln
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+
+# Local env
+*.env.local
+
+# Example host-project plugin junction (points back to repo root; never commit)
+Example/Plugins/
