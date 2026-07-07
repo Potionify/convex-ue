@@ -145,14 +145,17 @@ public:
 	UPROPERTY(BlueprintAssignable)
 	FConvexClientPin OnConnected;
 
-	/// Fires when no client could be obtained. Client is null.
+	/// Fires when no client could be obtained, the client failed to
+	/// initialize (e.g. bad URL), or the timeout elapsed before connecting.
+	/// Client is null when none could be obtained.
 	UPROPERTY(BlueprintAssignable)
 	FConvexClientPin OnFailed;
 
 	UFUNCTION(BlueprintCallable, Category = "Convex|Async",
 		meta = (BlueprintInternalUseOnly = "true", WorldContext = "WorldContextObject",
-			DisplayName = "Connect To Convex"))
-	static UConvexConnectAction* ConnectToConvex(const UObject* WorldContextObject, const FString& Url);
+			DisplayName = "Connect To Convex", AdvancedDisplay = "TimeoutSeconds"))
+	static UConvexConnectAction* ConnectToConvex(const UObject* WorldContextObject, const FString& Url,
+		float TimeoutSeconds = 30.0f);
 
 	virtual void Activate() override;
 
@@ -164,7 +167,9 @@ private:
 	TWeakObjectPtr<UConvexClient> Client;
 
 	FString Url;
+	float TimeoutSeconds = 30.0f;
 	FTSTicker::FDelegateHandle TickerHandle;
+	FTSTicker::FDelegateHandle TimeoutHandle;
 
 	UFUNCTION()
 	void HandleStateChanged(EConvexConnectionState State);

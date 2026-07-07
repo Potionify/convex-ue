@@ -107,11 +107,20 @@ namespace
 		{
 			// Mark dead first: taking ObserverGuard blocks until any in-flight
 			// forward completes, and thereafter every forwarder early-returns.
+			// This synchronously satisfies the transport contract's safety
+			// property ("no further observer callbacks after destruction").
 			{
 				FScopeLock Lock(&State->ObserverGuard);
 				State->bDead = true;
 			}
 
+			// The physical Close() below is deliberately queued rather than
+			// awaited: IWebSocket is game-thread-affine, and this destructor
+			// runs on the convex worker during reconnects but on the game
+			// thread during client shutdown — a blocking wait here would
+			// self-deadlock in the latter case. The convex client tolerates a
+			// briefly-lingering old socket (its connection-generation guard
+			// discards anything the socket might still do server-side).
 			// Close the socket and drop delegates on the game thread.
 			TSharedRef<FConvexWebSocketState, ESPMode::ThreadSafe> CapturedState = State;
 			RunOnGameThread([CapturedState]()

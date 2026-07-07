@@ -30,9 +30,19 @@ class CONVEXCLIENT_API UConvexClient : public UObject
 	GENERATED_BODY()
 
 public:
-	/// Build the client for a deployment URL and start connecting. Safe to
-	/// call once; repeated calls are ignored.
+	/// Build the client for a deployment URL and start connecting. Succeeds at
+	/// most once; a failed attempt (bad URL) may be retried with a new URL.
 	void Initialize(const FString& DeploymentUrl);
+
+	/// True once Initialize succeeded. A client that is not initialized (never
+	/// initialized, or the last attempt failed) performs no operations.
+	UFUNCTION(BlueprintPure, Category = "Convex")
+	bool IsInitialized() const { return bInitialized; }
+
+	/// True when the last Initialize attempt failed (e.g. malformed URL).
+	/// Cleared by the next Initialize call.
+	UFUNCTION(BlueprintPure, Category = "Convex")
+	bool HasInitializationFailed() const { return bInitializationFailed; }
 
 	/// Tear down the client (joins worker threads, completes pending callbacks
 	/// with errors). Idempotent; called automatically on destruction.
@@ -113,10 +123,15 @@ public:
 	// Auth
 	// ------------------------------------------------------------------
 
+	/// Authenticate as an end user with an OIDC JWT. This is the auth path
+	/// meant for shipped clients.
 	UFUNCTION(BlueprintCallable, Category = "Convex|Auth")
 	void SetUserAuth(const FString& Jwt);
 
-	UFUNCTION(BlueprintCallable, Category = "Convex|Auth")
+	/// Native-only, deliberately NOT Blueprint-callable: deployment admin keys
+	/// are secrets. Anything referenced from a Blueprint graph can end up in
+	/// cooked assets and packaged client builds. Use only from trusted server
+	/// or editor tooling code; never embed an admin key in a shipped game.
 	void SetAdminAuth(const FString& Key);
 
 	UFUNCTION(BlueprintCallable, Category = "Convex|Auth")
@@ -149,5 +164,6 @@ private:
 	TPimplPtr<FConvexClientImpl> Impl;
 	FTSTicker::FDelegateHandle TickerHandle;
 	bool bInitialized = false;
+	bool bInitializationFailed = false;
 	bool bShutDown = false;
 };

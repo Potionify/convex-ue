@@ -146,11 +146,13 @@ UConvexRunActionAction* UConvexRunActionAction::ConvexRunAction(const UObject* W
 // UConvexConnectAction
 // ===========================================================================
 
-UConvexConnectAction* UConvexConnectAction::ConnectToConvex(const UObject* WorldContextObject, const FString& Url)
+UConvexConnectAction* UConvexConnectAction::ConnectToConvex(const UObject* WorldContextObject, const FString& Url,
+	float TimeoutSeconds)
 {
 	UConvexConnectAction* Node = NewObject<UConvexConnectAction>();
 	Node->WorldContextObject = WorldContextObject;
 	Node->Url = Url;
+	Node->TimeoutSeconds = TimeoutSeconds;
 	return Node;
 }
 
@@ -174,6 +176,18 @@ void UConvexConnectAction::Activate()
 		return;
 	}
 
+	if (!Target->IsInitialized())
+	{
+		// Initialization failed (e.g. malformed deployment URL): fail
+		// programmatically instead of waiting for a connection that can
+		// never happen.
+		UE_LOG(LogConvex, Warning,
+			TEXT("Connect To Convex: client failed to initialize (check the deployment URL)."));
+		OnFailed.Broadcast(Target);
+		FinishAndDestroy();
+		return;
+	}
+
 	Client = Target;
 	RegisterAndKeep();
 
@@ -192,6 +206,19 @@ void UConvexConnectAction::Activate()
 	}
 
 	Target->OnConnectionStateChanged.AddDynamic(this, &UConvexConnectAction::HandleStateChanged);
+
+	// The node must never wait forever: fail after the (clamped) timeout if
+	// the connected state was not reached.
+	TimeoutHandle = FTSTicker::GetCoreTicker().AddTicker(
+		FTickerDelegate::CreateWeakLambda(this, [this](float) -> bool
+		{
+			UE_LOG(LogConvex, Warning, TEXT("Connect To Convex: timed out after %.1fs."),
+				FMath::Max(TimeoutSeconds, 1.0f));
+			OnFailed.Broadcast(Client.Get());
+			FinishAndDestroy();
+			return false;
+		}),
+		FMath::Max(TimeoutSeconds, 1.0f));
 }
 
 void UConvexConnectAction::HandleStateChanged(EConvexConnectionState State)
@@ -200,20 +227,27 @@ void UConvexConnectAction::HandleStateChanged(EConvexConnectionState State)
 	{
 		return;
 	}
-	if (UConvexClient* Target = Client.Get())
-	{
-		Target->OnConnectionStateChanged.RemoveDynamic(this, &UConvexConnectAction::HandleStateChanged);
-	}
 	OnConnected.Broadcast(Client.Get());
 	FinishAndDestroy();
 }
 
 void UConvexConnectAction::FinishAndDestroy()
 {
+	// Every completion path funnels through here: drop the state binding and
+	// both tickers so no pin can fire twice.
+	if (UConvexClient* Target = Client.Get())
+	{
+		Target->OnConnectionStateChanged.RemoveDynamic(this, &UConvexConnectAction::HandleStateChanged);
+	}
 	if (TickerHandle.IsValid())
 	{
 		FTSTicker::GetCoreTicker().RemoveTicker(TickerHandle);
 		TickerHandle.Reset();
+	}
+	if (TimeoutHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(TimeoutHandle);
+		TimeoutHandle.Reset();
 	}
 	Super::FinishAndDestroy();
 }

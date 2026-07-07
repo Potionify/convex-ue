@@ -58,6 +58,16 @@ UConvexClient* UConvexSubsystem::GetDefaultClient()
 {
 	if (DefaultClient)
 	{
+		// A previous initialization may have failed (bad URL). Initialize is
+		// retryable, so pick up the (possibly corrected) settings URL.
+		if (!DefaultClient->IsInitialized())
+		{
+			if (const UConvexSettings* Settings = UConvexSettings::Get();
+				Settings && !Settings->DeploymentUrl.IsEmpty())
+			{
+				DefaultClient->Initialize(Settings->DeploymentUrl);
+			}
+		}
 		return DefaultClient;
 	}
 

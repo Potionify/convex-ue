@@ -22,6 +22,66 @@
 using ConvexUtils::FStringToUtf8;
 
 // ---------------------------------------------------------------------------
+// Tracks in-flight HTTP/file callbacks so Shutdown() can complete every one
+// of them with an error, exactly once, matching the realtime client's
+// teardown contract. Completion lambdas held by UE HTTP requests can outlive
+// the client; Take() makes any late arrival a no-op.
+// ---------------------------------------------------------------------------
+class FConvexPendingOps
+{
+public:
+	/// Register an operation; Finisher fires its user callback with a
+	/// shutdown error if the operation is still pending at FireAll().
+	int64 Register(TFunction<void()> Finisher)
+	{
+		{
+			FScopeLock Lock(&Mutex);
+			if (!bShutDown)
+			{
+				const int64 Id = ++NextId;
+				Finishers.Add(Id, MoveTemp(Finisher));
+				return Id;
+			}
+		}
+		Finisher();  // registered after shutdown: fail immediately
+		return 0;
+	}
+
+	/// Claim an operation for normal completion. False when the client shut
+	/// down first (the finisher already fired) — the caller must do nothing.
+	bool Take(int64 Id)
+	{
+		FScopeLock Lock(&Mutex);
+		return Finishers.Remove(Id) > 0;
+	}
+
+	/// Fail everything still pending. Idempotent.
+	void FireAll()
+	{
+		TArray<TFunction<void()>> ToFire;
+		{
+			FScopeLock Lock(&Mutex);
+			bShutDown = true;
+			for (auto& Pair : Finishers)
+			{
+				ToFire.Add(MoveTemp(Pair.Value));
+			}
+			Finishers.Empty();
+		}
+		for (TFunction<void()>& Finisher : ToFire)
+		{
+			Finisher();
+		}
+	}
+
+private:
+	FCriticalSection Mutex;
+	int64 NextId = 0;
+	bool bShutDown = false;
+	TMap<int64, TFunction<void()>> Finishers;
+};
+
+// ---------------------------------------------------------------------------
 // PIMPL: owns the native clients and transports. Kept out of the header so the
 // UObject stays free of std::unique_ptr-of-incomplete-type concerns.
 // ---------------------------------------------------------------------------
@@ -31,6 +91,7 @@ struct FConvexClientImpl
 	std::shared_ptr<FUEHttpTransport> HttpTransport;
 	std::unique_ptr<convex::client> Client;
 	std::unique_ptr<convex::http_client> HttpClient;
+	TSharedPtr<FConvexPendingOps, ESPMode::ThreadSafe> PendingOps;
 };
 
 namespace
@@ -45,6 +106,53 @@ namespace
 		default:                                   return EConvexConnectionState::Disconnected;
 		}
 	}
+
+	// Wrap an HTTP/file callback in the pending-op registry: it fires exactly
+	// once — with the real result, or with a shutdown error from FireAll().
+	FConvexResultNative WrapPendingResult(
+		const TSharedPtr<FConvexPendingOps, ESPMode::ThreadSafe>& Ops, FConvexResultNative OnResult)
+	{
+		if (!OnResult)
+		{
+			return nullptr;
+		}
+		const int64 Id = Ops->Register([OnResult]
+		{
+			OnResult(FConvexResult::MakeError(TEXT("convex: client is shut down")));
+		});
+		if (Id == 0)
+		{
+			return nullptr;  // already shut down; the finisher ran inline
+		}
+		return [Ops, Id, OnResult](const FConvexResult& Result)
+		{
+			if (Ops->Take(Id))
+			{
+				OnResult(Result);
+			}
+		};
+	}
+
+	FConvexDownloadNative WrapPendingDownload(
+		const TSharedPtr<FConvexPendingOps, ESPMode::ThreadSafe>& Ops, FConvexDownloadNative OnDone)
+	{
+		if (!OnDone)
+		{
+			return nullptr;
+		}
+		const int64 Id = Ops->Register([OnDone] { OnDone(false, TArray<uint8>()); });
+		if (Id == 0)
+		{
+			return nullptr;
+		}
+		return [Ops, Id, OnDone](bool bSuccess, const TArray<uint8>& Data)
+		{
+			if (Ops->Take(Id))
+			{
+				OnDone(bSuccess, Data);
+			}
+		};
+	}
 }
 
 // ===========================================================================
@@ -53,15 +161,19 @@ namespace
 
 void UConvexClient::Initialize(const FString& DeploymentUrl)
 {
-	if (bInitialized)
+	if (bInitialized || bShutDown)
 	{
 		return;
 	}
-	bInitialized = true;
+	bInitializationFailed = false;
 
-	Impl = MakePimpl<FConvexClientImpl>();
-	Impl->WebSocketTransport = std::make_shared<FUEWebSocketTransport>();
-	Impl->HttpTransport = std::make_shared<FUEHttpTransport>();
+	// Build everything before latching bInitialized, so a failed attempt
+	// (e.g. malformed URL) leaves the object clean and retryable instead of
+	// permanently half-alive.
+	TPimplPtr<FConvexClientImpl> NewImpl = MakePimpl<FConvexClientImpl>();
+	NewImpl->WebSocketTransport = std::make_shared<FUEWebSocketTransport>();
+	NewImpl->HttpTransport = std::make_shared<FUEHttpTransport>();
+	NewImpl->PendingOps = MakeShared<FConvexPendingOps, ESPMode::ThreadSafe>();
 
 	const std::string Url = FStringToUtf8(DeploymentUrl);
 
@@ -69,15 +181,15 @@ void UConvexClient::Initialize(const FString& DeploymentUrl)
 	{
 		convex::client_options Options;
 		Options.deployment_url = Url;
-		Options.websocket = Impl->WebSocketTransport;
+		Options.websocket = NewImpl->WebSocketTransport;
 		Options.delivery_mode = convex::client_options::delivery::pumped;
 		Options.client_id = "ue-0.1.0";
-		Impl->Client = std::make_unique<convex::client>(std::move(Options));
+		NewImpl->Client = std::make_unique<convex::client>(std::move(Options));
 
-		Impl->HttpClient = std::make_unique<convex::http_client>(Url, Impl->HttpTransport);
+		NewImpl->HttpClient = std::make_unique<convex::http_client>(Url, NewImpl->HttpTransport);
 
 		TWeakObjectPtr<UConvexClient> WeakThis(this);
-		Impl->Client->on_state_change([WeakThis](convex::connection_state State)
+		NewImpl->Client->on_state_change([WeakThis](convex::connection_state State)
 		{
 			// Delivered on the game thread (pumped).
 			if (UConvexClient* Self = WeakThis.Get())
@@ -92,9 +204,12 @@ void UConvexClient::Initialize(const FString& DeploymentUrl)
 	{
 		UE_LOG(LogConvex, Error, TEXT("UConvexClient::Initialize failed for '%s': %hs"),
 			*DeploymentUrl, Error.what());
-		Impl->Client.reset();
-		Impl->HttpClient.reset();
+		bInitializationFailed = true;
+		return;
 	}
+
+	Impl = MoveTemp(NewImpl);
+	bInitialized = true;
 
 	// Pump queued callbacks on the game thread every tick.
 	TickerHandle = FTSTicker::GetCoreTicker().AddTicker(
@@ -136,9 +251,14 @@ void UConvexClient::Shutdown()
 		try
 		{
 			// Destroy the realtime client first (joins worker threads and
-			// completes pending callbacks), then the HTTP client, then the
-			// transports.
+			// completes pending callbacks), then fail any in-flight HTTP/file
+			// callbacks, then drop the HTTP client and transports. Late UE
+			// HTTP completions become no-ops via the pending-op registry.
 			Impl->Client.reset();
+			if (Impl->PendingOps)
+			{
+				Impl->PendingOps->FireAll();
+			}
 			Impl->HttpClient.reset();
 			Impl->WebSocketTransport.reset();
 			Impl->HttpTransport.reset();
@@ -318,18 +438,19 @@ void UConvexClient::HttpQueryNative(const FString& Path, const TMap<FString, FCo
 		if (OnResult) { OnResult(FConvexResult::MakeError(TEXT("convex: client not initialized"))); }
 		return;
 	}
+	FConvexResultNative Wrapped = WrapPendingResult(Impl->PendingOps, MoveTemp(OnResult));
 	try
 	{
 		Impl->HttpClient->query(FStringToUtf8(Path), ConvexMakeArgs(Args),
-			[OnResult](convex::function_result Result)
+			[Wrapped](convex::function_result Result)
 			{
-				if (OnResult) { OnResult(FConvexResult::FromNative(Result)); }
+				if (Wrapped) { Wrapped(FConvexResult::FromNative(Result)); }
 			});
 	}
 	catch (const std::exception& Error)
 	{
 		UE_LOG(LogConvex, Error, TEXT("HttpQuery failed for '%s': %hs"), *Path, Error.what());
-		if (OnResult) { OnResult(FConvexResult::MakeError(TEXT("convex: http query dispatch failed"))); }
+		if (Wrapped) { Wrapped(FConvexResult::MakeError(TEXT("convex: http query dispatch failed"))); }
 	}
 }
 
@@ -341,18 +462,19 @@ void UConvexClient::HttpMutationNative(const FString& Path, const TMap<FString, 
 		if (OnResult) { OnResult(FConvexResult::MakeError(TEXT("convex: client not initialized"))); }
 		return;
 	}
+	FConvexResultNative Wrapped = WrapPendingResult(Impl->PendingOps, MoveTemp(OnResult));
 	try
 	{
 		Impl->HttpClient->mutation(FStringToUtf8(Path), ConvexMakeArgs(Args),
-			[OnResult](convex::function_result Result)
+			[Wrapped](convex::function_result Result)
 			{
-				if (OnResult) { OnResult(FConvexResult::FromNative(Result)); }
+				if (Wrapped) { Wrapped(FConvexResult::FromNative(Result)); }
 			});
 	}
 	catch (const std::exception& Error)
 	{
 		UE_LOG(LogConvex, Error, TEXT("HttpMutation failed for '%s': %hs"), *Path, Error.what());
-		if (OnResult) { OnResult(FConvexResult::MakeError(TEXT("convex: http mutation dispatch failed"))); }
+		if (Wrapped) { Wrapped(FConvexResult::MakeError(TEXT("convex: http mutation dispatch failed"))); }
 	}
 }
 
@@ -364,18 +486,19 @@ void UConvexClient::HttpActionNative(const FString& Path, const TMap<FString, FC
 		if (OnResult) { OnResult(FConvexResult::MakeError(TEXT("convex: client not initialized"))); }
 		return;
 	}
+	FConvexResultNative Wrapped = WrapPendingResult(Impl->PendingOps, MoveTemp(OnResult));
 	try
 	{
 		Impl->HttpClient->action(FStringToUtf8(Path), ConvexMakeArgs(Args),
-			[OnResult](convex::function_result Result)
+			[Wrapped](convex::function_result Result)
 			{
-				if (OnResult) { OnResult(FConvexResult::FromNative(Result)); }
+				if (Wrapped) { Wrapped(FConvexResult::FromNative(Result)); }
 			});
 	}
 	catch (const std::exception& Error)
 	{
 		UE_LOG(LogConvex, Error, TEXT("HttpAction failed for '%s': %hs"), *Path, Error.what());
-		if (OnResult) { OnResult(FConvexResult::MakeError(TEXT("convex: http action dispatch failed"))); }
+		if (Wrapped) { Wrapped(FConvexResult::MakeError(TEXT("convex: http action dispatch failed"))); }
 	}
 }
 
@@ -409,20 +532,21 @@ void UConvexClient::UploadFileNative(const FString& UploadUrl, const TArray<uint
 		if (OnDone) { OnDone(FConvexResult::MakeError(TEXT("convex: client not initialized"))); }
 		return;
 	}
+	FConvexResultNative Wrapped = WrapPendingResult(Impl->PendingOps, MoveTemp(OnDone));
 	try
 	{
 		convex::bytes Bytes(Data.GetData(), Data.GetData() + Data.Num());
 		convex::store_file(*Impl->HttpTransport, FStringToUtf8(UploadUrl), FStringToUtf8(ContentType),
 			std::move(Bytes),
-			[OnDone](convex::function_result Result)
+			[Wrapped](convex::function_result Result)
 			{
-				if (OnDone) { OnDone(FConvexResult::FromNative(Result)); }
+				if (Wrapped) { Wrapped(FConvexResult::FromNative(Result)); }
 			});
 	}
 	catch (const std::exception& Error)
 	{
 		UE_LOG(LogConvex, Error, TEXT("UploadFile failed: %hs"), Error.what());
-		if (OnDone) { OnDone(FConvexResult::MakeError(TEXT("convex: upload dispatch failed"))); }
+		if (Wrapped) { Wrapped(FConvexResult::MakeError(TEXT("convex: upload dispatch failed"))); }
 	}
 }
 
@@ -440,10 +564,11 @@ void UConvexClient::DownloadFileNative(const FString& Url, FConvexDownloadNative
 		if (OnDone) { OnDone(false, TArray<uint8>()); }
 		return;
 	}
+	FConvexDownloadNative Wrapped = WrapPendingDownload(Impl->PendingOps, MoveTemp(OnDone));
 	try
 	{
 		convex::fetch_file(*Impl->HttpTransport, FStringToUtf8(Url),
-			[OnDone](convex::function_result Result)
+			[Wrapped](convex::function_result Result)
 			{
 				TArray<uint8> Out;
 				bool bSuccess = false;
@@ -456,8 +581,15 @@ void UConvexClient::DownloadFileNative(const FString& Url, FConvexDownloadNative
 						{
 							const convex::bytes& Buffer = Value.as_bytes();
 							Out.Append(Buffer.data(), static_cast<int32>(Buffer.size()));
+							bSuccess = true;
 						}
-						bSuccess = true;
+						else
+						{
+							// A successful fetch must decode to Bytes; anything
+							// else is a failure, not an empty download.
+							UE_LOG(LogConvex, Error,
+								TEXT("DownloadFile: expected bytes, got a different value kind"));
+						}
 					}
 				}
 				catch (const std::exception& Error)
@@ -465,13 +597,13 @@ void UConvexClient::DownloadFileNative(const FString& Url, FConvexDownloadNative
 					UE_LOG(LogConvex, Error, TEXT("DownloadFile decode failed: %hs"), Error.what());
 					bSuccess = false;
 				}
-				if (OnDone) { OnDone(bSuccess, Out); }
+				if (Wrapped) { Wrapped(bSuccess, Out); }
 			});
 	}
 	catch (const std::exception& Error)
 	{
 		UE_LOG(LogConvex, Error, TEXT("DownloadFile failed: %hs"), Error.what());
-		if (OnDone) { OnDone(false, TArray<uint8>()); }
+		if (Wrapped) { Wrapped(false, TArray<uint8>()); }
 	}
 }
 

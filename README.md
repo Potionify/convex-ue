@@ -53,7 +53,11 @@ Client->MutationNative(TEXT("messages:send"),
     [](const FConvexResult& Result) { /* ... */ });
 ```
 
-Auth: `Client->SetUserAuth(Jwt)` / `SetAdminAuth(DeployKey)` / `ClearAuth()`.
+Auth: `Client->SetUserAuth(Jwt)` (the client-side auth path) / `ClearAuth()`.
+`SetAdminAuth(DeployKey)` exists in C++ only and is intentionally **not**
+Blueprint-callable: deployment/admin keys are secrets — anything referenced
+from a Blueprint graph can end up in cooked assets and packaged builds. Use
+admin auth only in trusted server or editor tooling code.
 Connection: `GetConnectionState()`, `OnConnectionStateChanged`.
 Files: `UploadFile(UploadUrl, Bytes, ContentType, ...)` / `DownloadFile(Url, ...)`
 (generate the upload URL with a mutation calling `ctx.storage.generateUploadUrl()`).
