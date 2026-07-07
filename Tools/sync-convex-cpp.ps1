@@ -3,12 +3,13 @@
     Vendors the pure C++ convex-cpp library into the ConvexCore module.
 
 .DESCRIPTION
-    Copies the library headers, sources and the nlohmann/json single-header
-    from a sibling convex-cpp checkout into Source/ConvexCore, laid out so
-    that:
-      * consumers can  #include <convex/client.h>
-      * vendored .cpp   #include "detail/wire_json.h"  (relative to src)
-      * vendored code   #include <nlohmann/json.hpp>   (relative to third_party)
+    Copies the library from a sibling convex-cpp checkout:
+      * headers -> ConvexCore/Public   (consumers #include <convex/client.h>)
+      * sources + nlohmann/json.hpp -> ConvexClient/Private (compiled there:
+        the vendored classes carry no UE *_API export macros, so they cannot
+        cross a DLL boundary; ConvexCore only publishes the include path)
+    Vendored .cpp expect "detail/..." (relative to src) and
+    <nlohmann/json.hpp> (relative to third_party) on the include path.
 
     Destination directories are wiped first for a clean sync. The source
     repo's git HEAD and the sync date are written to convex-cpp.version.txt.
@@ -27,14 +28,15 @@ $ErrorActionPreference = "Stop"
 # Plugin root = parent of this Tools directory.
 $PluginRoot = Split-Path -Parent $PSScriptRoot
 $CoreRoot   = Join-Path $PluginRoot "Source\ConvexCore"
+$ClientRoot = Join-Path $PluginRoot "Source\ConvexClient"
 
 $SrcInclude     = Join-Path $SourceRepo "include\convex"
 $SrcSrc         = Join-Path $SourceRepo "src"
 $SrcThirdParty  = Join-Path $SourceRepo "third_party\nlohmann\json.hpp"
 
 $DstInclude     = Join-Path $CoreRoot "Public\convex-cpp\include\convex"
-$DstSrc         = Join-Path $CoreRoot "Private\convex-cpp\src"
-$DstThirdParty  = Join-Path $CoreRoot "Private\convex-cpp\third_party\nlohmann"
+$DstSrc         = Join-Path $ClientRoot "Private\convex-cpp\src"
+$DstThirdParty  = Join-Path $ClientRoot "Private\convex-cpp\third_party\nlohmann"
 
 # --- Validate source ------------------------------------------------------
 if (-not (Test-Path $SrcInclude))    { throw "Source headers not found: $SrcInclude" }
