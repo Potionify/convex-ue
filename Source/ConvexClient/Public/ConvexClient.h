@@ -63,7 +63,10 @@ public:
 
 	/// Subscribe to a query. The returned object exposes OnUpdate; the passed
 	/// delegate is also bound to the first/every update.
-	UFUNCTION(BlueprintCallable, Category = "Convex", meta = (AutoCreateRefTerm = "Args"))
+	/// NOTE: the dynamic-delegate call methods below are intentionally not
+	/// BlueprintCallable — the async nodes (Convex Query/Mutation/Run Action/
+	/// Subscribe, all taking FConvexArgs) are the one Blueprint surface; these
+	/// exist for the nodes and for C++ callers preferring dynamic delegates.
 	UConvexSubscription* Subscribe(const FString& Path, const TMap<FString, FConvexValue>& Args,
 		FConvexResultDelegate OnUpdate);
 
@@ -75,13 +78,10 @@ public:
 	// One-shot operations over the realtime connection
 	// ------------------------------------------------------------------
 
-	UFUNCTION(BlueprintCallable, Category = "Convex", meta = (AutoCreateRefTerm = "Args"))
 	void Query(const FString& Path, const TMap<FString, FConvexValue>& Args, FConvexResultDelegate OnResult);
 
-	UFUNCTION(BlueprintCallable, Category = "Convex", meta = (AutoCreateRefTerm = "Args"))
 	void Mutation(const FString& Path, const TMap<FString, FConvexValue>& Args, FConvexResultDelegate OnResult);
 
-	UFUNCTION(BlueprintCallable, Category = "Convex", meta = (AutoCreateRefTerm = "Args"))
 	void Action(const FString& Path, const TMap<FString, FConvexValue>& Args, FConvexResultDelegate OnResult);
 
 	void QueryNative(const FString& Path, const TMap<FString, FConvexValue>& Args, FConvexResultNative OnResult);
@@ -92,13 +92,10 @@ public:
 	// One-shot operations over plain HTTP
 	// ------------------------------------------------------------------
 
-	UFUNCTION(BlueprintCallable, Category = "Convex|HTTP", meta = (AutoCreateRefTerm = "Args"))
 	void HttpQuery(const FString& Path, const TMap<FString, FConvexValue>& Args, FConvexResultDelegate OnResult);
 
-	UFUNCTION(BlueprintCallable, Category = "Convex|HTTP", meta = (AutoCreateRefTerm = "Args"))
 	void HttpMutation(const FString& Path, const TMap<FString, FConvexValue>& Args, FConvexResultDelegate OnResult);
 
-	UFUNCTION(BlueprintCallable, Category = "Convex|HTTP", meta = (AutoCreateRefTerm = "Args"))
 	void HttpAction(const FString& Path, const TMap<FString, FConvexValue>& Args, FConvexResultDelegate OnResult);
 
 	void HttpQueryNative(const FString& Path, const TMap<FString, FConvexValue>& Args, FConvexResultNative OnResult);
