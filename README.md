@@ -19,11 +19,34 @@ plugin is fully self-contained, no external dependencies).
 
 ## Installation
 
-1. Copy this repository (or just `Convex.uplugin`, `Source/`, `Tools/`) into
-   your project's `Plugins/Convex` folder.
+1. Copy this repository (or just `Convex.uplugin`, `Source/`) into your
+   project's `Plugins/Convex` folder — or use a packaged build (below), which
+   ships prebuilt binaries so Blueprint-only projects need no C++ toolchain.
 2. Regenerate project files and build.
 3. Set your deployment URL in **Project Settings → Plugins → Convex**
    (`DeploymentUrl`, e.g. `https://your-deployment.convex.cloud`).
+
+## Building & packaging
+
+`convex-ue-build.bat` wraps the engine's build tools (override the engine path
+with `-engine=<path>` or the `CONVEX_UE_ENGINE` environment variable):
+
+| Command | What it does |
+|---|---|
+| `convex-ue-build.bat` (or `dev`) | Builds the Example editor target — the fast day-to-day loop |
+| `convex-ue-build.bat test` | Builds, then runs the `Convex.*` automation tests |
+| `convex-ue-build.bat package` | Produces a redistributable plugin in `Dist\Convex` (RunUAT `BuildPlugin`) |
+| `convex-ue-build.bat clean` | Deletes `Binaries/` and `Intermediate/` |
+
+**Close the Unreal Editor before building.** A running editor locks the plugin
+DLLs, and reflection changes (UCLASS/UFUNCTION/delegate signatures) are never
+picked up by Live Coding — a stale editor is the usual cause of "my node has no
+pins" or "my class isn't a Blueprint type".
+
+The packaged output (~25 MB) contains `Convex.uplugin`, `Source/` and prebuilt
+`Binaries/Win64`; drop that folder into any project's `Plugins/`. It excludes
+the `Example/` host project and build intermediates. Delete
+`Binaries/Win64/*.pdb` (~22 MB of debug symbols) to shrink it further.
 
 ## Quick start (C++)
 

@@ -21,3 +21,6 @@ Build/
 
 # Example host-project plugin junction (points back to repo root; never commit)
 Example/Plugins/
+
+# Distribution
+Dist/
