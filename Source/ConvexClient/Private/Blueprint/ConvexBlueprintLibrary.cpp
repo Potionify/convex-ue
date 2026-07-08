@@ -257,11 +257,6 @@ FConvexValue UConvexBlueprintLibrary::GetResultErrorData(const FConvexResult& Re
 // Access
 // ---------------------------------------------------------------------------
 
-UConvexSubsystem* UConvexBlueprintLibrary::GetConvexSubsystem(const UObject* WorldContextObject)
-{
-	return UConvexSubsystem::Get(WorldContextObject);
-}
-
 UConvexClient* UConvexBlueprintLibrary::GetDefaultConvexClient(const UObject* WorldContextObject)
 {
 	if (UConvexSubsystem* Subsystem = UConvexSubsystem::Get(WorldContextObject))

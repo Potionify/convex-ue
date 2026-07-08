@@ -42,8 +42,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Convex")
 	UConvexClient* CreateClient(const FString& Url);
 
-	/// Resolve the subsystem from any world context object.
-	UFUNCTION(BlueprintCallable, Category = "Convex", meta = (WorldContext = "WorldContextObject"))
+	/// Resolve the subsystem from any world context object. Native-only:
+	/// Blueprint already gets a pure engine-generated "Get ConvexSubsystem"
+	/// node (as for every GameInstance subsystem) — exposing this too would
+	/// just duplicate it in the palette.
 	static UConvexSubsystem* Get(const UObject* WorldContextObject);
 
 private:

@@ -166,9 +166,12 @@ public:
 	// Access
 	// ------------------------------------------------------------------
 
-	UFUNCTION(BlueprintCallable, Category = "Convex", meta = (WorldContext = "WorldContextObject"))
-	static UConvexSubsystem* GetConvexSubsystem(const UObject* WorldContextObject);
+	// No subsystem getter here: the engine auto-generates a pure
+	// "Get ConvexSubsystem" node for every GameInstance subsystem, and
+	// duplicating it only clutters the palette.
 
+	/// One-node shortcut for the common case: resolve the subsystem and
+	/// return (lazily creating) the settings-configured default client.
 	UFUNCTION(BlueprintCallable, Category = "Convex", meta = (WorldContext = "WorldContextObject"))
 	static UConvexClient* GetDefaultConvexClient(const UObject* WorldContextObject);
 };
