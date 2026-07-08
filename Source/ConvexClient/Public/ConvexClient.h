@@ -29,7 +29,12 @@ namespace convex
  * thread. Every call into convex:: that may throw is wrapped and fails
  * gracefully with a LogConvex error.
  */
-UCLASS(BlueprintType, NotBlueprintable)
+// Specifier order matters: UHT's Blueprintable/NotBlueprintable specifiers
+// also write the BlueprintType metadata (last one wins), so
+// "BlueprintType, NotBlueprintable" silently strips BlueprintType and the
+// class vanishes from the Blueprint variable-type picker. NotBlueprintable
+// must come first. Guarded by Convex.Editor.BlueprintVariableTypes.
+UCLASS(NotBlueprintable, BlueprintType)
 class CONVEXCLIENT_API UConvexClient : public UObject
 {
 	GENERATED_BODY()

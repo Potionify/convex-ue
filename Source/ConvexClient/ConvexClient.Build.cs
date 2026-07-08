@@ -49,5 +49,12 @@ public class ConvexClient : ModuleRules
 			"WebSockets",
 			"HTTP",
 		});
+
+		// Editor-only automation tests query the Blueprint schema directly
+		// (ConvexEditorTest.cpp, guarded by WITH_EDITOR).
+		if (Target.bBuildEditor)
+		{
+			PrivateDependencyModuleNames.Add("BlueprintGraph");
+		}
 	}
 }
