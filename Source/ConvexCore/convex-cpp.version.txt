@@ -1,4 +1,4 @@
 convex-cpp vendored sync
 source: F:\GitHub-Potionify\potionify-workspace\convex-cpp
-commit: cafa0cfa276c534eec1b806775e1cb7ede81db83
-synced: 2026-07-07 20:39:50
+commit: 9f28c18f08b1fd7e5becffd14c6c2299f895f00a
+synced: 2026-07-08 04:51:01
