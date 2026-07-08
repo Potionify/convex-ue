@@ -69,7 +69,7 @@ void UConvexCallAction::Activate()
 	if (!Target)
 	{
 		UE_LOG(LogConvex, Warning, TEXT("Convex async call '%s': no client available."), *Path);
-		OnFailure.Broadcast(FConvexResult::MakeError(TEXT("No Convex client available.")));
+		OnFailure.Broadcast(FConvexValue(), FConvexResult::MakeError(TEXT("No Convex client available.")));
 		FinishAndDestroy();
 		return;
 	}
@@ -97,11 +97,11 @@ void UConvexCallAction::HandleResult(FConvexResult Result)
 {
 	if (Result.bSuccess)
 	{
-		OnSuccess.Broadcast(Result.Value);
+		OnSuccess.Broadcast(Result.Value, Result);
 	}
 	else
 	{
-		OnFailure.Broadcast(Result);
+		OnFailure.Broadcast(FConvexValue(), Result);
 	}
 	FinishAndDestroy();
 }
@@ -273,7 +273,7 @@ void UConvexSubscribeAction::Activate()
 	if (!Target)
 	{
 		UE_LOG(LogConvex, Warning, TEXT("Convex Subscribe '%s': no client available."), *Path);
-		OnFailed.Broadcast(FConvexResult::MakeError(TEXT("No Convex client available.")));
+		OnFailed.Broadcast(nullptr, FConvexResult::MakeError(TEXT("No Convex client available.")));
 		FinishAndDestroy();
 		return;
 	}
@@ -287,17 +287,17 @@ void UConvexSubscribeAction::Activate()
 	if (!Subscription)
 	{
 		UE_LOG(LogConvex, Warning, TEXT("Convex Subscribe '%s': subscription failed."), *Path);
-		OnFailed.Broadcast(FConvexResult::MakeError(TEXT("Convex subscription failed.")));
+		OnFailed.Broadcast(nullptr, FConvexResult::MakeError(TEXT("Convex subscription failed.")));
 		FinishAndDestroy();
 		return;
 	}
 
-	OnSubscribed.Broadcast(Subscription);
+	OnSubscribed.Broadcast(Subscription, FConvexResult());
 }
 
 void UConvexSubscribeAction::HandleUpdate(FConvexResult Result)
 {
-	OnUpdate.Broadcast(Result);
+	OnUpdate.Broadcast(Subscription, Result);
 
 	// If the subscription has been torn down (e.g. client shutdown), finish.
 	if (!Subscription || !Subscription->IsActive())

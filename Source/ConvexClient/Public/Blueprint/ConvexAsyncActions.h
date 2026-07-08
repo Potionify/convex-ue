@@ -16,10 +16,16 @@ class UConvexClient;
 class UConvexSubscription;
 
 // Exec-pin delegate types for the async nodes. Each maps to one output pin.
+//
+// IMPORTANT: all BlueprintAssignable delegates on one async-node class MUST
+// share a single signature. UK2Node_BaseAsyncTask creates the node's payload
+// data pins from the FIRST delegate only; payloads of later delegates with
+// different signatures are silently dropped (no pin appears). Hence the
+// two-parameter combined signatures below.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FConvexClientPin, UConvexClient*, Client);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FConvexValuePin, FConvexValue, Value);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FConvexResultPin, FConvexResult, Result);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FConvexSubscriptionPin, UConvexSubscription*, Subscription);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FConvexCallPin, FConvexValue, Value, FConvexResult, Result);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FConvexSubscribePin, UConvexSubscription*, Subscription,
+	FConvexResult, Result);
 
 /**
  * Shared plumbing for Convex async-action nodes: caches the world context,
@@ -59,13 +65,15 @@ class CONVEXCLIENT_API UConvexCallAction : public UConvexAsyncActionBase
 	GENERATED_BODY()
 
 public:
-	/// Fires with the result value when the call succeeds.
+	/// Fires when the call succeeds; Value is the function's return value
+	/// (Result carries the same success for uniform handling).
 	UPROPERTY(BlueprintAssignable)
-	FConvexValuePin OnSuccess;
+	FConvexCallPin OnSuccess;
 
-	/// Fires with the full result when the call fails (or no client is available).
+	/// Fires when the call fails (or no client is available); inspect Result
+	/// (Value is null).
 	UPROPERTY(BlueprintAssignable)
-	FConvexResultPin OnFailure;
+	FConvexCallPin OnFailure;
 
 	virtual void Activate() override;
 
@@ -186,17 +194,20 @@ class CONVEXCLIENT_API UConvexSubscribeAction : public UConvexAsyncActionBase
 	GENERATED_BODY()
 
 public:
-	/// Fires once, right after subscribing, with the handle used to unsubscribe.
+	/// Fires once, right after subscribing; Subscription is the handle used
+	/// to unsubscribe (Result is empty here).
 	UPROPERTY(BlueprintAssignable)
-	FConvexSubscriptionPin OnSubscribed;
+	FConvexSubscribePin OnSubscribed;
 
-	/// Fires with each update (including query errors delivered as data).
+	/// Fires with each update in Result (including query errors delivered as
+	/// data); Subscription remains valid for unsubscribing.
 	UPROPERTY(BlueprintAssignable)
-	FConvexResultPin OnUpdate;
+	FConvexSubscribePin OnUpdate;
 
-	/// Fires if the subscription could not be established.
+	/// Fires if the subscription could not be established; inspect Result
+	/// (Subscription is null).
 	UPROPERTY(BlueprintAssignable)
-	FConvexResultPin OnFailed;
+	FConvexSubscribePin OnFailed;
 
 	UFUNCTION(BlueprintCallable, Category = "Convex|Async",
 		meta = (BlueprintInternalUseOnly = "true", WorldContext = "WorldContextObject",
