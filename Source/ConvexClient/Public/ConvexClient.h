@@ -14,6 +14,11 @@
 class UConvexSubscription;
 struct FConvexClientImpl;
 
+namespace convex
+{
+	struct log_entry;
+}
+
 /**
  * A realtime Convex client: wraps convex::client (+ a one-shot HTTP client and
  * file-storage transport) and exposes them to native C++ and Blueprint.
@@ -128,6 +133,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Convex|Auth")
 	void SetUserAuth(const FString& Jwt);
 
+	/// Native-only: authenticate with a JWT plus a refresh fetcher the client
+	/// invokes on every reconnect (so an expired token is replaced instead of
+	/// looping AuthErrors). See FConvexAuthRefreshNative for the strict
+	/// threading contract the fetcher must follow.
+	void SetUserAuthWithRefresh(const FString& Jwt, FConvexAuthRefreshNative RefreshFetcher);
+
 	/// Native-only, deliberately NOT Blueprint-callable: deployment admin keys
 	/// are secrets. Anything referenced from a Blueprint graph can end up in
 	/// cooked assets and packaged client builds. Use only from trusted server
@@ -137,12 +148,26 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Convex|Auth")
 	void ClearAuth();
 
+	/// Fires (game thread) when the server rejects a token that cannot be
+	/// refreshed further. The client keeps running unauthenticated; call
+	/// SetUserAuth with a new token to re-authenticate.
+	UPROPERTY(BlueprintAssignable, Category = "Convex|Auth")
+	FConvexAuthFailureDelegate OnAuthFailed;
+
+	/// Native mirror of OnAuthFailed.
+	FConvexAuthFailureNative OnAuthFailedNative;
+
 	// ------------------------------------------------------------------
 	// Connection
 	// ------------------------------------------------------------------
 
 	UFUNCTION(BlueprintPure, Category = "Convex")
 	EConvexConnectionState GetConnectionState() const;
+
+	/// Point-in-time snapshot: state, retry count, in-flight requests, last
+	/// close reason. Poll from UI ("reconnecting, attempt 3...").
+	UFUNCTION(BlueprintPure, Category = "Convex")
+	FConvexConnectionInfo GetConnectionInfo() const;
 
 	/// Fires on every connection-state transition (game thread).
 	UPROPERTY(BlueprintAssignable, Category = "Convex")
@@ -151,11 +176,28 @@ public:
 	/// Native mirror of OnConnectionStateChanged.
 	FConvexConnectionStateNative OnConnectionStateChangedNative;
 
+	// ------------------------------------------------------------------
+	// Server logs
+	// ------------------------------------------------------------------
+
+	/// Fires (game thread) with server-side console output from queries,
+	/// mutations, and actions, attributed to the emitting function. Every
+	/// entry is also written to the LogConvex output-log category.
+	UPROPERTY(BlueprintAssignable, Category = "Convex")
+	FConvexServerLogDelegate OnServerLog;
+
+	/// Native mirror of OnServerLog.
+	FConvexServerLogNative OnServerLogNative;
+
 	/// Stop rooting a subscription once it has been unsubscribed/released.
 	void ForgetSubscription(UConvexSubscription* Subscription);
 
 private:
 	bool Tick(float DeltaTime);
+
+	/// Map a core log entry to FConvexLogEntry, write it to LogConvex, and
+	/// broadcast the delegates. Game thread only.
+	void HandleServerLog(const convex::log_entry& Entry);
 
 	/// Keeps handed-out subscriptions alive until unsubscribed/torn down.
 	UPROPERTY()

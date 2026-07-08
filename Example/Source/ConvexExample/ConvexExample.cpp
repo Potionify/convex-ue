@@ -1,4 +1,4 @@
-// Copyright Potionify. All Rights Reserved.
+// Copyright Potionify. Apache-2.0.
 
 #include "ConvexExample.h"
 #include "Modules/ModuleManager.h"

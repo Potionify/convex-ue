@@ -1,4 +1,4 @@
-// Copyright Potionify. All Rights Reserved.
+// Copyright Potionify. Apache-2.0.
 
 #pragma once
 
@@ -9,7 +9,7 @@ CONVEXCLIENT_API DECLARE_LOG_CATEGORY_EXTERN(LogConvex, Log, All);
 
 /**
  * ConvexClient module. The UE-facing client layer that wires convex-cpp's
- * abstract transports to UE's WebSockets/HTTP. Currently a skeleton.
+ * abstract transports to UE's WebSockets/HTTP.
  */
 class FConvexClientModule : public IModuleInterface
 {

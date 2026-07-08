@@ -199,6 +199,29 @@ void UConvexClient::Initialize(const FString& DeploymentUrl)
 				Self->OnConnectionStateChangedNative.Broadcast(Mapped);
 			}
 		});
+
+		NewImpl->Client->on_log_lines([WeakThis](const convex::log_entry& Entry)
+		{
+			// Delivered on the game thread (pumped).
+			if (UConvexClient* Self = WeakThis.Get())
+			{
+				Self->HandleServerLog(Entry);
+			}
+		});
+
+		NewImpl->Client->on_auth_failure([WeakThis](std::string Reason)
+		{
+			// Delivered on the game thread (pumped).
+			if (UConvexClient* Self = WeakThis.Get())
+			{
+				const FString Message = ConvexUtils::Utf8ToFString(Reason);
+				UE_LOG(LogConvex, Warning,
+					TEXT("Authentication failed permanently; continuing unauthenticated: %s"),
+					*Message);
+				Self->OnAuthFailed.Broadcast(Message);
+				Self->OnAuthFailedNative.Broadcast(Message);
+			}
+		});
 	}
 	catch (const std::exception& Error)
 	{
@@ -631,6 +654,36 @@ void UConvexClient::SetUserAuth(const FString& Jwt)
 	}
 }
 
+void UConvexClient::SetUserAuthWithRefresh(const FString& Jwt, FConvexAuthRefreshNative RefreshFetcher)
+{
+	try
+	{
+		const convex::auth_token Token = convex::auth_token::user(FStringToUtf8(Jwt));
+		convex::auth_fetcher Fetcher;
+		if (RefreshFetcher)
+		{
+			// Runs on an internal worker thread under the client's lock; the
+			// UE-side fetcher's contract (fast, thread-safe, no UObjects) is
+			// documented on FConvexAuthRefreshNative.
+			Fetcher = [RefreshFetcher](bool bForceRefresh) -> std::optional<convex::auth_token>
+			{
+				const TOptional<FString> Fresh = RefreshFetcher(bForceRefresh);
+				if (!Fresh.IsSet())
+				{
+					return std::nullopt;  // keep the current token
+				}
+				return convex::auth_token::user(FStringToUtf8(*Fresh));
+			};
+		}
+		if (Impl && Impl->Client) { Impl->Client->set_auth(Token, std::move(Fetcher)); }
+		if (Impl && Impl->HttpClient) { Impl->HttpClient->set_auth(Token); }
+	}
+	catch (const std::exception& Error)
+	{
+		UE_LOG(LogConvex, Error, TEXT("SetUserAuthWithRefresh failed: %hs"), Error.what());
+	}
+}
+
 void UConvexClient::SetAdminAuth(const FString& Key)
 {
 	try
@@ -677,4 +730,59 @@ EConvexConnectionState UConvexClient::GetConnectionState() const
 		}
 	}
 	return EConvexConnectionState::Disconnected;
+}
+
+FConvexConnectionInfo UConvexClient::GetConnectionInfo() const
+{
+	FConvexConnectionInfo Info;
+	if (Impl && Impl->Client)
+	{
+		try
+		{
+			const convex::connection_info Native = Impl->Client->info();
+			Info.State = ToConnectionState(Native.state);
+			Info.Retries = static_cast<int32>(Native.retries);
+			Info.InflightMutations = static_cast<int32>(Native.inflight_mutations);
+			Info.InflightActions = static_cast<int32>(Native.inflight_actions);
+			Info.bHasSyncedPastLastRestart = Native.has_synced_past_last_restart;
+			Info.LastCloseReason = ConvexUtils::Utf8ToFString(Native.last_close_reason);
+			Info.ConnectionCount = static_cast<int32>(Native.connection_count);
+		}
+		catch (const std::exception& Error)
+		{
+			UE_LOG(LogConvex, Error, TEXT("GetConnectionInfo failed: %hs"), Error.what());
+		}
+	}
+	return Info;
+}
+
+// ===========================================================================
+// Server logs
+// ===========================================================================
+
+void UConvexClient::HandleServerLog(const convex::log_entry& Entry)
+{
+	FConvexLogEntry Mapped;
+	switch (Entry.source)
+	{
+	case convex::log_entry::source_kind::mutation: Mapped.Source = EConvexLogSource::Mutation; break;
+	case convex::log_entry::source_kind::action:   Mapped.Source = EConvexLogSource::Action; break;
+	case convex::log_entry::source_kind::query:
+	default:                                       Mapped.Source = EConvexLogSource::Query; break;
+	}
+	Mapped.UdfPath = ConvexUtils::Utf8ToFString(Entry.udf_path);
+	Mapped.Lines.Reserve(static_cast<int32>(Entry.lines.size()));
+	for (const std::string& Line : Entry.lines)
+	{
+		Mapped.Lines.Add(ConvexUtils::Utf8ToFString(Line));
+	}
+
+	const FString Attribution = Mapped.UdfPath.IsEmpty() ? TEXT("<unknown>") : *Mapped.UdfPath;
+	for (const FString& Line : Mapped.Lines)
+	{
+		UE_LOG(LogConvex, Log, TEXT("[server] %s: %s"), *Attribution, *Line);
+	}
+
+	OnServerLog.Broadcast(Mapped);
+	OnServerLogNative.Broadcast(Mapped);
 }

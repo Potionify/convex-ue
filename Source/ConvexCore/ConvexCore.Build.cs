@@ -1,4 +1,4 @@
-// Copyright Potionify. All Rights Reserved.
+// Copyright Potionify. Apache-2.0.
 
 using System.IO;
 using UnrealBuildTool;

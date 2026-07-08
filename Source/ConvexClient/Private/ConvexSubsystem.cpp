@@ -88,6 +88,12 @@ UConvexClient* UConvexSubsystem::GetOrCreateClient(const FString& Name, const FS
 {
 	if (const TObjectPtr<UConvexClient>* Existing = NamedClients.Find(Name))
 	{
+		// The Url parameter only applies on creation; getting an existing
+		// client with a different URL is almost certainly a caller bug.
+		UE_LOG(LogConvex, Warning,
+			TEXT("GetOrCreateClient('%s'): returning the existing client; the requested URL '%s' "
+			     "is ignored (clients cannot change deployment after Initialize)"),
+			*Name, *Url);
 		return *Existing;
 	}
 	UConvexClient* Client = MakeClient(Url);
