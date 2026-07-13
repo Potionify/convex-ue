@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "ConvexDelegates.h"
+#include "ConvexPaginatedSubscription.h"
 #include "ConvexValue.h"
 #include "Containers/Ticker.h"
 #include "Templates/PimplPtr.h"
@@ -78,6 +79,19 @@ public:
 	/// Native subscribe; OnUpdate may be empty.
 	UConvexSubscription* SubscribeNative(const FString& Path, const TMap<FString, FConvexValue>& Args,
 		FConvexResultNative OnUpdate);
+
+	/// Subscribe to a paginated query (one taking `paginationOpts`) as a
+	/// growing, live-updating list. Args excludes paginationOpts (injected).
+	/// The returned object exposes OnUpdate/LoadMore/GetSnapshot; the passed
+	/// delegate is also bound to every snapshot update.
+	UConvexPaginatedSubscription* SubscribePaginated(const FString& Path,
+		const TMap<FString, FConvexValue>& Args, int32 InitialNumItems,
+		FConvexPaginatedSnapshotDelegate OnUpdate);
+
+	/// Native paginated subscribe; OnUpdate may be empty.
+	UConvexPaginatedSubscription* SubscribePaginatedNative(const FString& Path,
+		const TMap<FString, FConvexValue>& Args, int32 InitialNumItems,
+		FConvexPaginatedUpdateNativeFn OnUpdate);
 
 	// ------------------------------------------------------------------
 	// One-shot operations over the realtime connection
@@ -194,6 +208,9 @@ public:
 	/// Stop rooting a subscription once it has been unsubscribed/released.
 	void ForgetSubscription(UConvexSubscription* Subscription);
 
+	/// Stop rooting a paginated subscription once it has been released.
+	void ForgetPaginatedSubscription(UConvexPaginatedSubscription* Subscription);
+
 private:
 	bool Tick(float DeltaTime);
 
@@ -204,6 +221,13 @@ private:
 	/// Keeps handed-out subscriptions alive until unsubscribed/torn down.
 	UPROPERTY()
 	TArray<TObjectPtr<UConvexSubscription>> ActiveSubscriptions;
+
+	/// Keeps handed-out paginated subscriptions alive until released. Unlike
+	/// plain subscription handles, paginated helpers must not outlive the
+	/// native client (LoadMore re-subscribes through it), so Shutdown()
+	/// force-releases these before destroying the client.
+	UPROPERTY()
+	TArray<TObjectPtr<UConvexPaginatedSubscription>> ActivePaginatedSubscriptions;
 
 	TPimplPtr<FConvexClientImpl> Impl;
 	FTSTicker::FDelegateHandle TickerHandle;

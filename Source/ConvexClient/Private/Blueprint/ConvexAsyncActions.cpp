@@ -315,3 +315,80 @@ void UConvexSubscribeAction::Unsubscribe()
 	}
 	FinishAndDestroy();
 }
+
+// ===========================================================================
+// UConvexPaginatedSubscribeAction
+// ===========================================================================
+
+UConvexPaginatedSubscribeAction* UConvexPaginatedSubscribeAction::ConvexSubscribePaginated(
+	const UObject* WorldContextObject, UConvexClient* Client, const FString& Path, const FConvexArgs& Args,
+	int32 InitialNumItems)
+{
+	UConvexPaginatedSubscribeAction* Node = NewObject<UConvexPaginatedSubscribeAction>();
+	Node->WorldContextObject = WorldContextObject;
+	Node->TargetClient = Client;
+	Node->Path = Path;
+	Node->Args = Args;
+	Node->InitialNumItems = InitialNumItems;
+	return Node;
+}
+
+void UConvexPaginatedSubscribeAction::Activate()
+{
+	FConvexPaginatedSnapshot FailureSnapshot;
+	FailureSnapshot.Status = EConvexPaginationStatus::Error;
+	FailureSnapshot.bIsLoading = false;
+
+	UConvexClient* Target = ResolveClient(TargetClient.Get());
+	if (!Target)
+	{
+		UE_LOG(LogConvex, Warning, TEXT("Convex Paginated Subscribe '%s': no client available."), *Path);
+		FailureSnapshot.Error = FConvexResult::MakeError(TEXT("No Convex client available."));
+		OnFailed.Broadcast(nullptr, FailureSnapshot);
+		FinishAndDestroy();
+		return;
+	}
+
+	RegisterAndKeep();
+
+	FConvexPaginatedSnapshotDelegate Delegate;
+	Delegate.BindUFunction(this, GET_FUNCTION_NAME_CHECKED(UConvexPaginatedSubscribeAction, HandleUpdate));
+
+	Subscription = Target->SubscribePaginated(Path, Args.ToMap(), InitialNumItems, Delegate);
+	if (!Subscription)
+	{
+		UE_LOG(LogConvex, Warning, TEXT("Convex Paginated Subscribe '%s': subscription failed."), *Path);
+		FailureSnapshot.Error = FConvexResult::MakeError(TEXT("Convex paginated subscription failed."));
+		OnFailed.Broadcast(nullptr, FailureSnapshot);
+		FinishAndDestroy();
+		return;
+	}
+
+	OnSubscribed.Broadcast(Subscription, Subscription->GetSnapshot());
+}
+
+void UConvexPaginatedSubscribeAction::HandleUpdate(FConvexPaginatedSnapshot Snapshot)
+{
+	OnUpdate.Broadcast(Subscription, Snapshot);
+
+	// If the subscription has been torn down (e.g. client shutdown), finish.
+	if (!Subscription || !Subscription->IsActive())
+	{
+		FinishAndDestroy();
+	}
+}
+
+bool UConvexPaginatedSubscribeAction::LoadMore(int32 NumItems)
+{
+	return Subscription ? Subscription->LoadMore(NumItems) : false;
+}
+
+void UConvexPaginatedSubscribeAction::Unsubscribe()
+{
+	if (Subscription)
+	{
+		Subscription->Unsubscribe();
+		Subscription = nullptr;
+	}
+	FinishAndDestroy();
+}

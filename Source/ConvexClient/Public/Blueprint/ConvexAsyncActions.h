@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "ConvexArgs.h"
 #include "ConvexDelegates.h"
+#include "ConvexPaginatedSubscription.h"
 #include "ConvexResult.h"
 #include "ConvexValue.h"
 #include "Containers/Ticker.h"
@@ -26,6 +27,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FConvexClientPin, UConvexClient*, Cl
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FConvexCallPin, FConvexValue, Value, FConvexResult, Result);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FConvexSubscribePin, UConvexSubscription*, Subscription,
 	FConvexResult, Result);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FConvexPaginatedPin, UConvexPaginatedSubscription*, Subscription,
+	FConvexPaginatedSnapshot, Snapshot);
 
 /**
  * Shared plumbing for Convex async-action nodes: caches the world context,
@@ -233,4 +236,64 @@ private:
 
 	UFUNCTION()
 	void HandleUpdate(FConvexResult Result);
+};
+
+/**
+ * "Convex Paginated Subscribe": subscribes to a paginated query (one taking
+ * `paginationOpts`) as a growing, live-updating list. OnSubscribed fires once
+ * with the subscription handle; OnUpdate fires with a fresh snapshot on every
+ * change (page results, LoadMore, resets); OnFailed fires if no client or
+ * subscription could be obtained. Call LoadMore (on this node or the handle)
+ * to fetch the next page. Stays alive while subscribed.
+ */
+UCLASS()
+class CONVEXCLIENT_API UConvexPaginatedSubscribeAction : public UConvexAsyncActionBase
+{
+	GENERATED_BODY()
+
+public:
+	/// Fires once, right after subscribing; Subscription is the handle used
+	/// for LoadMore/Unsubscribe (Snapshot is the initial loading state).
+	UPROPERTY(BlueprintAssignable)
+	FConvexPaginatedPin OnSubscribed;
+
+	/// Fires with each snapshot: all loaded items in order plus the status.
+	UPROPERTY(BlueprintAssignable)
+	FConvexPaginatedPin OnUpdate;
+
+	/// Fires if the subscription could not be established; inspect
+	/// Snapshot.Error (Subscription is null).
+	UPROPERTY(BlueprintAssignable)
+	FConvexPaginatedPin OnFailed;
+
+	UFUNCTION(BlueprintCallable, Category = "Convex|Async",
+		meta = (BlueprintInternalUseOnly = "true", WorldContext = "WorldContextObject",
+			DisplayName = "Convex Paginated Subscribe", AutoCreateRefTerm = "Args"))
+	static UConvexPaginatedSubscribeAction* ConvexSubscribePaginated(const UObject* WorldContextObject,
+		UConvexClient* Client, const FString& Path, const FConvexArgs& Args, int32 InitialNumItems = 10);
+
+	/// Request the next page of up to NumItems items (no-op unless the status
+	/// is CanLoadMore). Returns true when a page load actually started.
+	UFUNCTION(BlueprintCallable, Category = "Convex|Async")
+	bool LoadMore(int32 NumItems);
+
+	/// Unsubscribe and finish the node.
+	UFUNCTION(BlueprintCallable, Category = "Convex|Async")
+	void Unsubscribe();
+
+	virtual void Activate() override;
+
+private:
+	UPROPERTY()
+	TWeakObjectPtr<UConvexClient> TargetClient;
+
+	UPROPERTY()
+	TObjectPtr<UConvexPaginatedSubscription> Subscription;
+
+	FString Path;
+	FConvexArgs Args;
+	int32 InitialNumItems = 10;
+
+	UFUNCTION()
+	void HandleUpdate(FConvexPaginatedSnapshot Snapshot);
 };

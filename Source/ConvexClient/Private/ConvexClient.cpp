@@ -3,6 +3,7 @@
 #include "ConvexClient.h"
 
 #include "ConvexClientModule.h"
+#include "ConvexPaginatedHandle.h"
 #include "ConvexSubscription.h"
 #include "ConvexSubscriptionHandle.h"
 #include "ConvexUtils.h"
@@ -12,6 +13,7 @@
 #include <convex/client.h>
 #include <convex/file_storage.h>
 #include <convex/http_client.h>
+#include <convex/paginated.h>
 #include <convex/protocol.h>
 
 #include <exception>
@@ -269,6 +271,20 @@ void UConvexClient::Shutdown()
 		TickerHandle.Reset();
 	}
 
+	// Paginated helpers re-subscribe through the native client (LoadMore,
+	// resets), so unlike plain subscription handles they must be torn down
+	// BEFORE the client is destroyed. Unsubscribe mutates the array via
+	// ForgetPaginatedSubscription, hence the copy.
+	for (UConvexPaginatedSubscription* Paginated :
+		TArray<TObjectPtr<UConvexPaginatedSubscription>>(ActivePaginatedSubscriptions))
+	{
+		if (Paginated)
+		{
+			Paginated->Unsubscribe();
+		}
+	}
+	ActivePaginatedSubscriptions.Reset();
+
 	if (Impl)
 	{
 		try
@@ -353,9 +369,73 @@ UConvexSubscription* UConvexClient::Subscribe(const FString& Path,
 		[OnUpdate](const FConvexResult& Result) { OnUpdate.ExecuteIfBound(Result); });
 }
 
+UConvexPaginatedSubscription* UConvexClient::SubscribePaginatedNative(const FString& Path,
+	const TMap<FString, FConvexValue>& Args, int32 InitialNumItems,
+	FConvexPaginatedUpdateNativeFn OnUpdate)
+{
+	if (!Impl || !Impl->Client)
+	{
+		UE_LOG(LogConvex, Error, TEXT("SubscribePaginated called before Initialize (path '%s')"), *Path);
+		return nullptr;
+	}
+	if (InitialNumItems <= 0)
+	{
+		UE_LOG(LogConvex, Error,
+			TEXT("SubscribePaginated '%s': InitialNumItems must be > 0 (got %d)"), *Path, InitialNumItems);
+		return nullptr;
+	}
+
+	UConvexPaginatedSubscription* Subscription = NewObject<UConvexPaginatedSubscription>(this);
+	if (OnUpdate)
+	{
+		Subscription->OnUpdateNative.AddLambda(
+			[Fn = MoveTemp(OnUpdate)](const FConvexPaginatedSnapshot& Snapshot) { Fn(Snapshot); });
+	}
+
+	TWeakObjectPtr<UConvexPaginatedSubscription> WeakSub(Subscription);
+	try
+	{
+		convex::paginated_query::options Options;
+		Options.udf_path = FStringToUtf8(Path);
+		Options.args = ConvexMakeArgs(Args);
+		Options.initial_num_items = static_cast<std::size_t>(InitialNumItems);
+		convex::paginated_query Native(*Impl->Client, std::move(Options),
+			[WeakSub](const convex::paginated_snapshot& Snapshot)
+			{
+				// Pumped: fires on the game thread.
+				if (UConvexPaginatedSubscription* Sub = WeakSub.Get())
+				{
+					Sub->BroadcastUpdate(FConvexPaginatedSnapshot::FromNative(Snapshot));
+				}
+			});
+		Subscription->SetHandle(MakePimpl<FConvexPaginatedHandle>(std::move(Native)), this);
+	}
+	catch (const std::exception& Error)
+	{
+		UE_LOG(LogConvex, Error, TEXT("SubscribePaginated failed for '%s': %hs"), *Path, Error.what());
+		return nullptr;
+	}
+
+	ActivePaginatedSubscriptions.Add(Subscription);
+	return Subscription;
+}
+
+UConvexPaginatedSubscription* UConvexClient::SubscribePaginated(const FString& Path,
+	const TMap<FString, FConvexValue>& Args, int32 InitialNumItems,
+	FConvexPaginatedSnapshotDelegate OnUpdate)
+{
+	return SubscribePaginatedNative(Path, Args, InitialNumItems,
+		[OnUpdate](const FConvexPaginatedSnapshot& Snapshot) { OnUpdate.ExecuteIfBound(Snapshot); });
+}
+
 void UConvexClient::ForgetSubscription(UConvexSubscription* Subscription)
 {
 	ActiveSubscriptions.Remove(Subscription);
+}
+
+void UConvexClient::ForgetPaginatedSubscription(UConvexPaginatedSubscription* Subscription)
+{
+	ActivePaginatedSubscriptions.Remove(Subscription);
 }
 
 // ===========================================================================
