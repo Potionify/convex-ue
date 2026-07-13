@@ -25,6 +25,11 @@
 			"Name": "ConvexClient",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "ConvexEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
 		}
 	]
 }
