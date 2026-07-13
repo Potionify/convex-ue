@@ -80,6 +80,21 @@ public:
 
 	const TArray<FConvexFunctionSpec>& GetFunctions() const { return Functions; }
 
+	/// User tables plus browsable system tables, sorted (from getTableMapping).
+	const TArray<FString>& GetTableNames() const { return TableNames; }
+
+	/// The active declared schema as stringified SchemaJson; empty when the
+	/// deployment has no schema (or none arrived yet).
+	const FString& GetActiveSchemaJson() const { return ActiveSchemaJson; }
+
+	/// The connected client, for editor panels that manage their own
+	/// subscriptions (data pages, per-table indexes). Null when disconnected.
+	UConvexClient* GetClient() const { return Client.Get(); }
+
+	/// One-shot fetch of GET /api/shapes2 (inferred table shapes). OnDone gets
+	/// (bSuccess, response JSON text) on the game thread.
+	void FetchShapes(TFunction<void(bool, FString)> OnDone);
+
 	/// Writes on prod-typed deployments are the editor's own guard rail (the
 	/// server enforces only key permissions, not deployment type).
 	bool IsWriteSafeDeployment() const
@@ -114,11 +129,15 @@ private:
 	FString DeploymentState;
 	FString ServerVersion;
 	TArray<FConvexFunctionSpec> Functions;
+	TArray<FString> TableNames;
+	FString ActiveSchemaJson;
 
 	TStrongObjectPtr<UConvexClient> Client;
 	TStrongObjectPtr<UConvexSubscription> StateSubscription;
 	TStrongObjectPtr<UConvexSubscription> VersionSubscription;
 	TStrongObjectPtr<UConvexSubscription> ApiSpecSubscription;
+	TStrongObjectPtr<UConvexSubscription> TableMappingSubscription;
+	TStrongObjectPtr<UConvexSubscription> SchemaSubscription;
 	FDelegateHandle ConnectionStateHandle;
 
 	/// Bumped on every RefreshAndConnect/Disconnect so stale async callbacks

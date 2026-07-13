@@ -5,9 +5,13 @@
 #include "Framework/Docking/TabManager.h"
 #include "Modules/ModuleManager.h"
 #include "SConvexConnectionPanel.h"
+#include "SConvexDataBrowser.h"
 #include "SConvexFunctionRunner.h"
+#include "SConvexSchemaPanel.h"
 #include "Styling/AppStyle.h"
 #include "Widgets/Docking/SDockTab.h"
+#include "Widgets/Input/SSegmentedControl.h"
+#include "Widgets/Layout/SWidgetSwitcher.h"
 #include "WorkspaceMenuStructure.h"
 #include "WorkspaceMenuStructureModule.h"
 
@@ -16,6 +20,13 @@
 namespace
 {
 	const FName ConvexTabName(TEXT("ConvexDashboard"));
+
+	/// Which section a freshly spawned tab shows (0 Functions, 1 Data,
+	/// 2 Schema). Exists so automation (the screenshot test) can capture every
+	/// section; harmless interactively.
+	TAutoConsoleVariable<int32> CVarStartPanel(
+		TEXT("Convex.Editor.StartPanel"), 0,
+		TEXT("Section index the Convex tab opens on (0 Functions, 1 Data, 2 Schema)."));
 }
 
 /**
@@ -68,6 +79,13 @@ private:
 			Session->RefreshAndConnect();
 		}
 
+		const int32 StartPanel = FMath::Clamp(CVarStartPanel.GetValueOnGameThread(), 0, 2);
+		const TSharedRef<SWidgetSwitcher> Switcher = SNew(SWidgetSwitcher);
+		Switcher->AddSlot()[SNew(SConvexFunctionRunner, Session.ToSharedRef())];
+		Switcher->AddSlot()[SNew(SConvexDataBrowser, Session.ToSharedRef())];
+		Switcher->AddSlot()[SNew(SConvexSchemaPanel, Session.ToSharedRef())];
+		Switcher->SetActiveWidgetIndex(StartPanel);
+
 		return SNew(SDockTab)
 			.TabRole(ETabRole::NomadTab)
 			[
@@ -80,9 +98,32 @@ private:
 				]
 
 				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(8.f, 6.f, 8.f, 2.f)
+				.HAlign(HAlign_Left)
+				[
+					SNew(SSegmentedControl<int32>)
+					.Value(StartPanel)
+					.OnValueChanged_Lambda([WeakSwitcher = TWeakPtr<SWidgetSwitcher>(Switcher)](
+						int32 NewIndex)
+					{
+						if (const TSharedPtr<SWidgetSwitcher> Pinned = WeakSwitcher.Pin())
+						{
+							Pinned->SetActiveWidgetIndex(NewIndex);
+						}
+					})
+					+ SSegmentedControl<int32>::Slot(0)
+					.Text(LOCTEXT("FunctionsTab", "Functions"))
+					+ SSegmentedControl<int32>::Slot(1)
+					.Text(LOCTEXT("DataTab", "Data"))
+					+ SSegmentedControl<int32>::Slot(2)
+					.Text(LOCTEXT("SchemaTab", "Schema"))
+				]
+
+				+ SVerticalBox::Slot()
 				.FillHeight(1.f)
 				[
-					SNew(SConvexFunctionRunner, Session.ToSharedRef())
+					Switcher
 				]
 			];
 	}

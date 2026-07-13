@@ -327,6 +327,18 @@ bool FConvexEditorToolLiveFlow::Update()
 				Has(TEXT("counters:get"), TEXT("Query")));
 			Test->TestTrue(TEXT("apiSpec lists counters:increment as mutation"),
 				Has(TEXT("counters:increment"), TEXT("Mutation")));
+
+			// Phase 2 session data arrives over the same connection.
+			if (S.GetTableNames().Num() == 0 || S.GetActiveSchemaJson().IsEmpty())
+			{
+				return false;  // keep waiting within the phase timeout
+			}
+			Test->TestTrue(TEXT("table list has counters"),
+				S.GetTableNames().Contains(TEXT("counters")));
+			Test->TestTrue(TEXT("table list has messages"),
+				S.GetTableNames().Contains(TEXT("messages")));
+			Test->TestTrue(TEXT("declared schema mentions counters"),
+				S.GetActiveSchemaJson().Contains(TEXT("counters")));
 			AdvanceTo(2);
 			return false;
 		}
@@ -402,14 +414,22 @@ bool FConvexEditorToolLiveFlow::Update()
 
 			if (FSlateApplication::IsInitialized())
 			{
-				// Construction exercises every polled attribute path once.
+				// Construction exercises every polled attribute path once
+				// (the data/schema panels also auto-select the first table
+				// and fire their subscriptions).
 				const TSharedRef<SWidget> Panel =
 					SNew(SConvexConnectionPanel, State->Session.ToSharedRef());
 				const TSharedRef<SWidget> Runner =
 					SNew(SConvexFunctionRunner, State->Session.ToSharedRef());
+				const TSharedRef<SWidget> Data =
+					SNew(SConvexDataBrowser, State->Session.ToSharedRef());
+				const TSharedRef<SWidget> Schema =
+					SNew(SConvexSchemaPanel, State->Session.ToSharedRef());
 				Test->TestTrue(TEXT("widgets constructed"),
 					&Panel.Get() != &SNullWidget::NullWidget.Get() &&
-						&Runner.Get() != &SNullWidget::NullWidget.Get());
+						&Runner.Get() != &SNullWidget::NullWidget.Get() &&
+						&Data.Get() != &SNullWidget::NullWidget.Get() &&
+						&Schema.Get() != &SNullWidget::NullWidget.Get());
 			}
 
 			State->Session->Disconnect();
@@ -429,9 +449,20 @@ struct FTabScreenshotState
 {
 	FAutomationTestBase* Test = nullptr;
 	TWeakPtr<SDockTab> Tab;
-	int32 Phase = 0;
+	int32 PanelIndex = 0;  // 0 Functions, 1 Data, 2 Schema
+	bool bWaiting = false;
 	double PhaseStartSeconds = 0.0;
 };
+
+const TCHAR* PanelSuffix(int32 PanelIndex)
+{
+	switch (PanelIndex)
+	{
+		case 1: return TEXT("Data");
+		case 2: return TEXT("Schema");
+		default: return TEXT("Functions");
+	}
+}
 
 }  // namespace
 
@@ -441,20 +472,34 @@ DEFINE_LATENT_AUTOMATION_COMMAND_ONE_PARAMETER(FConvexTabScreenshotFlow,
 bool FConvexTabScreenshotFlow::Update()
 {
 	const double Now = FPlatformTime::Seconds();
-	if (State->PhaseStartSeconds == 0.0)
+
+	if (!State->bWaiting)
 	{
+		// (Re)spawn the tab showing the requested section.
+		IConsoleVariable* StartPanel =
+			IConsoleManager::Get().FindConsoleVariable(TEXT("Convex.Editor.StartPanel"));
+		if (StartPanel != nullptr)
+		{
+			StartPanel->Set(State->PanelIndex);
+		}
+		const TSharedPtr<SDockTab> Tab =
+			FGlobalTabmanager::Get()->TryInvokeTab(FTabId(TEXT("ConvexDashboard")));
+		if (!Tab.IsValid())
+		{
+			State->Test->AddWarning(TEXT("Convex tab spawner unavailable"));
+			return true;
+		}
+		State->Tab = Tab;
+		State->bWaiting = true;
 		State->PhaseStartSeconds = Now;
+		return false;
 	}
 
-	// Give the session a few seconds to connect and populate the function
-	// list so the capture shows the real thing, not an empty shell.
-	if (State->Phase == 0)
+	// Give the session time to connect and the section's subscriptions time
+	// to deliver (data pages, schema, indexes) so captures show real content.
+	const double WaitSeconds = State->PanelIndex == 0 ? 8.0 : 5.0;
+	if (Now - State->PhaseStartSeconds < WaitSeconds)
 	{
-		if (Now - State->PhaseStartSeconds < 6.0)
-		{
-			return false;
-		}
-		State->Phase = 1;
 		return false;
 	}
 
@@ -472,25 +517,38 @@ bool FConvexTabScreenshotFlow::Update()
 	if (!FSlateApplication::Get().TakeScreenshot(Tab->GetContent(), Pixels, Size))
 	{
 		State->Test->AddWarning(
-			TEXT("Slate screenshot unavailable (null RHI?) — skipping capture"));
+			TEXT("Slate screenshot unavailable (null RHI?) — skipping captures"));
+		Tab->RequestCloseTab();
+		return true;
+	}
+
+	TArray64<uint8> Png;
+	FImageUtils::PNGCompressImageArray(Size.X, Size.Y, Pixels, Png);
+	const FString Path = FPaths::ProjectSavedDir() /
+		FString::Printf(TEXT("ConvexTabScreenshot_%s.png"), PanelSuffix(State->PanelIndex));
+	if (FFileHelper::SaveArrayToFile(Png, *Path))
+	{
+		State->Test->AddInfo(FString::Printf(TEXT("Convex tab screenshot: %s (%dx%d)"),
+			*FPaths::ConvertRelativePathToFull(Path), Size.X, Size.Y));
 	}
 	else
 	{
-		TArray64<uint8> Png;
-		FImageUtils::PNGCompressImageArray(Size.X, Size.Y, Pixels, Png);
-		const FString Path = FPaths::ProjectSavedDir() / TEXT("ConvexTabScreenshot.png");
-		if (FFileHelper::SaveArrayToFile(Png, *Path))
-		{
-			State->Test->AddInfo(FString::Printf(TEXT("Convex tab screenshot: %s (%dx%d)"),
-				*FPaths::ConvertRelativePathToFull(Path), Size.X, Size.Y));
-		}
-		else
-		{
-			State->Test->AddWarning(TEXT("Failed to write ConvexTabScreenshot.png"));
-		}
+		State->Test->AddWarning(TEXT("Failed to write tab screenshot"));
 	}
 	Tab->RequestCloseTab();
-	return true;
+
+	if (State->PanelIndex >= 2)
+	{
+		if (IConsoleVariable* StartPanel =
+				IConsoleManager::Get().FindConsoleVariable(TEXT("Convex.Editor.StartPanel")))
+		{
+			StartPanel->Set(0);
+		}
+		return true;
+	}
+	++State->PanelIndex;
+	State->bWaiting = false;
+	return false;
 }
 
 /// Invokes the real dockable tab (spawner, session, widgets) and captures it
@@ -507,17 +565,8 @@ bool FConvexTabScreenshotTest::RunTest(const FString&)
 		AddWarning(TEXT("Skipping Convex.EditorTool.TabScreenshot: Slate not initialized"));
 		return true;
 	}
-	const TSharedPtr<SDockTab> Tab =
-		FGlobalTabmanager::Get()->TryInvokeTab(FTabId(TEXT("ConvexDashboard")));
-	if (!Tab.IsValid())
-	{
-		AddWarning(TEXT("Skipping Convex.EditorTool.TabScreenshot: tab spawner unavailable "
-						"(commandlet run?)"));
-		return true;
-	}
 	const TSharedPtr<FTabScreenshotState> State = MakeShared<FTabScreenshotState>();
 	State->Test = this;
-	State->Tab = Tab;
 	ADD_LATENT_AUTOMATION_COMMAND(FConvexTabScreenshotFlow(State));
 	return true;
 }

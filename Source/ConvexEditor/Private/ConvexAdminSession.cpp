@@ -58,6 +58,16 @@ void FConvexAdminSession::Disconnect()
 		ApiSpecSubscription->Unsubscribe();
 		ApiSpecSubscription.Reset();
 	}
+	if (TableMappingSubscription.IsValid())
+	{
+		TableMappingSubscription->Unsubscribe();
+		TableMappingSubscription.Reset();
+	}
+	if (SchemaSubscription.IsValid())
+	{
+		SchemaSubscription->Unsubscribe();
+		SchemaSubscription.Reset();
+	}
 	if (Client.IsValid())
 	{
 		if (ConnectionStateHandle.IsValid())
@@ -72,6 +82,8 @@ void FConvexAdminSession::Disconnect()
 	DeploymentState.Reset();
 	ServerVersion.Reset();
 	Functions.Reset();
+	TableNames.Reset();
+	ActiveSchemaJson.Reset();
 	NotifyChanged();
 }
 
@@ -250,6 +262,54 @@ void FConvexAdminSession::SubscribeSystemQueries()
 			This->NotifyChanged();
 		}));
 
+	// Table list: getTableMapping returns {<tableNumber>: <tableName>}.
+	TableMappingSubscription = TStrongObjectPtr<UConvexSubscription>(Client->SubscribeNative(
+		TEXT("_system/frontend/getTableMapping"), NoArgs,
+		[WeakThis = AsWeak(), Gen](const FConvexResult& Result)
+		{
+			const TSharedPtr<FConvexAdminSession> This = WeakThis.Pin();
+			if (!This.IsValid() || This->Generation != Gen)
+			{
+				return;
+			}
+			This->TableNames.Reset();
+			TMap<FString, FConvexValue> Mapping;
+			if (Result.bSuccess && Result.Value.TryGetObject(Mapping))
+			{
+				for (const TPair<FString, FConvexValue>& Pair : Mapping)
+				{
+					FString Name;
+					if (Pair.Value.TryGetString(Name))
+					{
+						This->TableNames.AddUnique(MoveTemp(Name));
+					}
+				}
+				// User tables first, then the browsable system tables.
+				This->TableNames.Sort([](const FString& A, const FString& B)
+				{
+					const bool bSystemA = A.StartsWith(TEXT("_"));
+					const bool bSystemB = B.StartsWith(TEXT("_"));
+					return bSystemA != bSystemB ? !bSystemA : A < B;
+				});
+			}
+			This->NotifyChanged();
+		}));
+
+	// Declared schema: {active?: string, inProgress?: string} (stringified).
+	SchemaSubscription = TStrongObjectPtr<UConvexSubscription>(Client->SubscribeNative(
+		TEXT("_system/frontend/getSchemas"), NoArgs,
+		[WeakThis = AsWeak(), Gen](const FConvexResult& Result)
+		{
+			const TSharedPtr<FConvexAdminSession> This = WeakThis.Pin();
+			if (!This.IsValid() || This->Generation != Gen)
+			{
+				return;
+			}
+			This->ActiveSchemaJson =
+				Result.bSuccess ? GetStringField(Result.Value, TEXT("active")) : FString();
+			This->NotifyChanged();
+		}));
+
 	// Function specs (live: updates on every deploy).
 	ApiSpecSubscription = TStrongObjectPtr<UConvexSubscription>(Client->SubscribeNative(
 		TEXT("_system/cli/modules:apiSpec"), NoArgs,
@@ -316,6 +376,43 @@ void FConvexAdminSession::SubscribeSystemQueries()
 			}
 			This->NotifyChanged();
 		}));
+}
+
+void FConvexAdminSession::FetchShapes(TFunction<void(bool, FString)> OnDone)
+{
+	if (!Config.IsValid())
+	{
+		OnDone(false, TEXT("Not configured."));
+		return;
+	}
+	const uint64 Gen = Generation;
+	const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request =
+		FHttpModule::Get().CreateRequest();
+	Request->SetURL(Config.DeploymentUrl / TEXT("api/shapes2"));
+	Request->SetVerb(TEXT("GET"));
+	Request->SetHeader(TEXT("Authorization"), TEXT("Convex ") + Config.AdminKey);
+	Request->SetHeader(TEXT("Convex-Client"), TEXT("unreal-0.1.0"));
+	Request->OnProcessRequestComplete().BindLambda(
+		[WeakThis = AsWeak(), Gen, OnDone = MoveTemp(OnDone)](
+			FHttpRequestPtr, FHttpResponsePtr Response, bool bConnectedSuccessfully)
+		{
+			const TSharedPtr<FConvexAdminSession> This = WeakThis.Pin();
+			if (!This.IsValid() || This->Generation != Gen)
+			{
+				return;
+			}
+			if (!bConnectedSuccessfully || !Response.IsValid() ||
+				Response->GetResponseCode() != 200)
+			{
+				OnDone(false,
+					Response.IsValid()
+						? FString::Printf(TEXT("HTTP %d"), Response->GetResponseCode())
+						: TEXT("Could not reach the deployment."));
+				return;
+			}
+			OnDone(true, Response->GetContentAsString());
+		});
+	Request->ProcessRequest();
 }
 
 void FConvexAdminSession::RunFunction(const FConvexFunctionSpec& Spec,
