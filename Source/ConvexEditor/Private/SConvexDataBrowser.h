@@ -3,6 +3,7 @@
 #pragma once
 
 #include "ConvexAdminSession.h"
+#include "ConvexPaginatedSubscription.h"
 #include "ConvexSubscription.h"
 #include "CoreMinimal.h"
 #include "UObject/StrongObjectPtr.h"
@@ -14,10 +15,10 @@ class SMultiLineEditableTextBox;
 
 /**
  * The data tab: live table browser. Tables come from getTableMapping; rows
- * from paginatedTableDocuments, one live subscription per loaded page (the
- * dashboard's usePaginatedQuery pattern — the query journal keeps page
- * boundaries stable while data changes underneath). Read-only in Phase 2;
- * Phase 3 adds dev-gated document CRUD on top.
+ * from paginatedTableDocuments through UConvexPaginatedSubscription — the
+ * same usePaginatedQuery state machine games use (one live subscription per
+ * loaded page; query journals keep page boundaries stable while data changes
+ * underneath). Includes dev-gated document CRUD.
  */
 class SConvexDataBrowser : public SCompoundWidget
 {
@@ -37,23 +38,14 @@ private:
 	};
 	using FDocItem = TSharedPtr<FDocRow>;
 
-	/// One live page of documents.
-	struct FPage
-	{
-		TStrongObjectPtr<UConvexSubscription> Subscription;
-		TArray<FDocItem> Docs;
-		FString ContinueCursor;
-		bool bIsDone = false;
-		bool bLoaded = false;
-	};
-
 	void OnSessionChanged();
 	void SelectTable(TSharedPtr<FString> Table);
-	/// Unsubscribe and drop all pages (safe in the destructor).
+	/// Unsubscribe and drop all pages (safe in the destructor: never
+	/// resubscribes, so no SharedThis on a dying widget).
 	void ClearPages();
-	/// ClearPages + start over from page 0 for the current table.
+	/// ClearPages + start over from a fresh first page for the current table.
 	void ResetPages();
-	void SubscribePage(int32 PageIndex, const FString& Cursor);
+	/// Rebuild the flat row list from the latest pagination snapshot.
 	void RebuildDocItems();
 	FString FiltersArgument() const;
 
@@ -79,7 +71,12 @@ private:
 	TSharedPtr<SListView<TSharedPtr<FString>>> TableList;
 	FString SelectedTable;
 
-	TArray<TSharedPtr<FPage>> Pages;
+	/// All loaded pages, as one live paginated subscription. Recreated when
+	/// the table or sort order changes; the helper itself handles page
+	/// chaining, seam stability, and stale-cursor resets.
+	TStrongObjectPtr<UConvexPaginatedSubscription> PaginatedSubscription;
+	FConvexPaginatedSnapshot Snapshot;
+
 	TArray<FDocItem> DocItems;
 	TSharedPtr<SListView<FDocItem>> DocList;
 	TSharedPtr<SMultiLineEditableTextBox> DetailBox;
@@ -88,6 +85,4 @@ private:
 	int64 RowCount = -1;  // -1 = unknown
 
 	bool bAscending = false;
-	/// Bumped on every reset so callbacks from replaced pages are ignored.
-	uint64 PagesGeneration = 0;
 };

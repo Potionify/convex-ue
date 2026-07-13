@@ -387,15 +387,14 @@ FString SConvexDataBrowser::FiltersArgument() const
 
 void SConvexDataBrowser::ClearPages()
 {
-	++PagesGeneration;
-	for (const TSharedPtr<FPage>& Page : Pages)
+	if (PaginatedSubscription.IsValid())
 	{
-		if (Page->Subscription.IsValid())
-		{
-			Page->Subscription->Unsubscribe();
-		}
+		// Unsubscribe (never resubscribe) so this stays destructor-safe; any
+		// update callbacks still queued become no-ops once the helper stops.
+		PaginatedSubscription->Unsubscribe();
+		PaginatedSubscription.Reset();
 	}
-	Pages.Reset();
+	Snapshot = FConvexPaginatedSnapshot();
 	DocItems.Reset();
 }
 
@@ -403,27 +402,12 @@ void SConvexDataBrowser::ResetPages()
 {
 	ClearPages();
 	RebuildDocItems();
-	if (!SelectedTable.IsEmpty() && Session->GetClient() != nullptr)
-	{
-		SubscribePage(0, FString());
-	}
-}
 
-void SConvexDataBrowser::SubscribePage(int32 PageIndex, const FString& Cursor)
-{
 	UConvexClient* Client = Session->GetClient();
-	if (Client == nullptr)
+	if (SelectedTable.IsEmpty() || Client == nullptr)
 	{
 		return;
 	}
-	const TSharedPtr<FPage> Page = MakeShared<FPage>();
-	Pages.Add(Page);
-
-	TMap<FString, FConvexValue> PaginationOpts;
-	PaginationOpts.Add(TEXT("numItems"), FConvexValue::Float(PageSize));
-	PaginationOpts.Add(TEXT("cursor"),
-		Cursor.IsEmpty() ? FConvexValue::Null() : FConvexValue::String(Cursor));
-	PaginationOpts.Add(TEXT("id"), FConvexValue::Float(PageIndex + 1));
 
 	// System tables (_file_storage, _scheduled_jobs) are only readable via
 	// db.system, which paginatedTableDocuments does not use — the CLI's
@@ -431,7 +415,6 @@ void SConvexDataBrowser::SubscribePage(int32 PageIndex, const FString& Cursor)
 	const bool bSystemTable = SelectedTable.StartsWith(TEXT("_"));
 
 	TMap<FString, FConvexValue> Args;
-	Args.Add(TEXT("paginationOpts"), FConvexValue::Object(PaginationOpts));
 	Args.Add(TEXT("table"), FConvexValue::String(SelectedTable));
 	if (bSystemTable)
 	{
@@ -445,90 +428,66 @@ void SConvexDataBrowser::SubscribePage(int32 PageIndex, const FString& Cursor)
 			Filters.IsEmpty() ? FConvexValue::Null() : FConvexValue::String(Filters));
 	}
 
-	const uint64 Gen = PagesGeneration;
-	Page->Subscription = TStrongObjectPtr<UConvexSubscription>(Client->SubscribeNative(
-		bSystemTable ? TEXT("_system/cli/tableData")
-					 : TEXT("_system/frontend/paginatedTableDocuments"),
-		Args,
-		[WeakThis = TWeakPtr<SConvexDataBrowser>(SharedThis(this)), Gen, Page](
-			const FConvexResult& Result)
-		{
-			const TSharedPtr<SConvexDataBrowser> This = WeakThis.Pin();
-			if (!This.IsValid() || This->PagesGeneration != Gen)
+	PaginatedSubscription = TStrongObjectPtr<UConvexPaginatedSubscription>(
+		Client->SubscribePaginatedNative(
+			bSystemTable ? TEXT("_system/cli/tableData")
+						 : TEXT("_system/frontend/paginatedTableDocuments"),
+			Args, PageSize,
+			[WeakThis = TWeakPtr<SConvexDataBrowser>(SharedThis(this))](
+				const FConvexPaginatedSnapshot& InSnapshot)
 			{
-				return;
-			}
-			Page->Docs.Reset();
-			Page->bLoaded = true;
-
-			TMap<FString, FConvexValue> Fields;
-			if (Result.bSuccess && Result.Value.TryGetObject(Fields))
-			{
-				if (const FConvexValue* IsDone = Fields.Find(TEXT("isDone")))
+				const TSharedPtr<SConvexDataBrowser> This = WeakThis.Pin();
+				if (!This.IsValid())
 				{
-					bool bDone = false;
-					IsDone->TryGetBool(bDone);
-					Page->bIsDone = bDone;
+					return;
 				}
-				if (const FConvexValue* Continue = Fields.Find(TEXT("continueCursor")))
-				{
-					Continue->TryGetString(Page->ContinueCursor);
-				}
-				TArray<FConvexValue> Rows;
-				if (const FConvexValue* PageRows = Fields.Find(TEXT("page"));
-					PageRows != nullptr && PageRows->TryGetArray(Rows))
-				{
-					for (const FConvexValue& Row : Rows)
-					{
-						const TSharedPtr<FDocRow> Doc = MakeShared<FDocRow>();
-						TMap<FString, FConvexValue> RowFields;
-						if (Row.TryGetObject(RowFields))
-						{
-							if (const FConvexValue* IdValue = RowFields.Find(TEXT("_id")))
-							{
-								IdValue->TryGetString(Doc->Id);
-							}
-							// Filter-validation errors ride inside the page
-							// as {error, filter} objects; show them in place.
-							if (Doc->Id.IsEmpty())
-							{
-								if (const FConvexValue* Error = RowFields.Find(TEXT("error")))
-								{
-									Error->TryGetString(Doc->Id);
-									Doc->Id = TEXT("(filter error)");
-								}
-							}
-						}
-						bool bEncoded = false;
-						const FString Wire = Row.ToWire(bEncoded);
-						if (bEncoded)
-						{
-							Doc->Preview = MakePreview(Wire);
-							Doc->PrettyJson = ConvexEditorJson::PrettyPrint(Wire);
-						}
-						Page->Docs.Add(Doc);
-					}
-				}
-			}
-			else if (!Result.bSuccess)
-			{
-				const TSharedPtr<FDocRow> Doc = MakeShared<FDocRow>();
-				Doc->Id = TEXT("(error)");
-				Doc->Preview = Result.ErrorMessage;
-				Doc->PrettyJson = Result.ErrorMessage;
-				Page->Docs.Add(Doc);
-				Page->bIsDone = true;
-			}
-			This->RebuildDocItems();
-		}));
+				This->Snapshot = InSnapshot;
+				This->RebuildDocItems();
+			}));
 }
 
 void SConvexDataBrowser::RebuildDocItems()
 {
 	DocItems.Reset();
-	for (const TSharedPtr<FPage>& Page : Pages)
+	for (const FConvexValue& Row : Snapshot.Results)
 	{
-		DocItems.Append(Page->Docs);
+		const TSharedPtr<FDocRow> Doc = MakeShared<FDocRow>();
+		TMap<FString, FConvexValue> RowFields;
+		if (Row.TryGetObject(RowFields))
+		{
+			if (const FConvexValue* IdValue = RowFields.Find(TEXT("_id")))
+			{
+				IdValue->TryGetString(Doc->Id);
+			}
+			// Filter-validation errors ride inside the page as
+			// {error, filter} objects; show them in place.
+			if (Doc->Id.IsEmpty())
+			{
+				if (const FConvexValue* Error = RowFields.Find(TEXT("error")))
+				{
+					Error->TryGetString(Doc->Id);
+					Doc->Id = TEXT("(filter error)");
+				}
+			}
+		}
+		bool bEncoded = false;
+		const FString Wire = Row.ToWire(bEncoded);
+		if (bEncoded)
+		{
+			Doc->Preview = MakePreview(Wire);
+			Doc->PrettyJson = ConvexEditorJson::PrettyPrint(Wire);
+		}
+		DocItems.Add(Doc);
+	}
+	// A failed page (other than the stale-cursor errors the helper resets on
+	// itself) surfaces as a trailing error row.
+	if (Snapshot.Status == EConvexPaginationStatus::Error)
+	{
+		const TSharedPtr<FDocRow> Doc = MakeShared<FDocRow>();
+		Doc->Id = TEXT("(error)");
+		Doc->Preview = Snapshot.Error.ErrorMessage;
+		Doc->PrettyJson = Snapshot.Error.ErrorMessage;
+		DocItems.Add(Doc);
 	}
 	if (DocList.IsValid())
 	{
@@ -538,19 +497,15 @@ void SConvexDataBrowser::RebuildDocItems()
 
 bool SConvexDataBrowser::CanLoadMore() const
 {
-	if (Pages.Num() == 0)
-	{
-		return false;
-	}
-	const TSharedPtr<FPage>& Last = Pages.Last();
-	return Last->bLoaded && !Last->bIsDone && !Last->ContinueCursor.IsEmpty();
+	return PaginatedSubscription.IsValid() &&
+		Snapshot.Status == EConvexPaginationStatus::CanLoadMore;
 }
 
 FReply SConvexDataBrowser::OnLoadMoreClicked()
 {
-	if (CanLoadMore())
+	if (PaginatedSubscription.IsValid())
 	{
-		SubscribePage(Pages.Num(), Pages.Last()->ContinueCursor);
+		PaginatedSubscription->LoadMore(PageSize);
 	}
 	return FReply::Handled();
 }
