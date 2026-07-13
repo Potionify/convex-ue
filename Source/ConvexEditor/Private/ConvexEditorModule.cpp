@@ -7,7 +7,9 @@
 #include "SConvexConnectionPanel.h"
 #include "SConvexDataBrowser.h"
 #include "SConvexFunctionRunner.h"
+#include "SConvexLogsPanel.h"
 #include "SConvexSchemaPanel.h"
+#include "SConvexTrafficPanel.h"
 #include "Styling/AppStyle.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "Widgets/Input/SSegmentedControl.h"
@@ -26,7 +28,8 @@ namespace
 	/// section; harmless interactively.
 	TAutoConsoleVariable<int32> CVarStartPanel(
 		TEXT("Convex.Editor.StartPanel"), 0,
-		TEXT("Section index the Convex tab opens on (0 Functions, 1 Data, 2 Schema)."));
+		TEXT("Section index the Convex tab opens on "
+			 "(0 Functions, 1 Data, 2 Schema, 3 Logs, 4 Traffic)."));
 }
 
 /**
@@ -79,11 +82,13 @@ private:
 			Session->RefreshAndConnect();
 		}
 
-		const int32 StartPanel = FMath::Clamp(CVarStartPanel.GetValueOnGameThread(), 0, 2);
+		const int32 StartPanel = FMath::Clamp(CVarStartPanel.GetValueOnGameThread(), 0, 4);
 		const TSharedRef<SWidgetSwitcher> Switcher = SNew(SWidgetSwitcher);
 		Switcher->AddSlot()[SNew(SConvexFunctionRunner, Session.ToSharedRef())];
 		Switcher->AddSlot()[SNew(SConvexDataBrowser, Session.ToSharedRef())];
 		Switcher->AddSlot()[SNew(SConvexSchemaPanel, Session.ToSharedRef())];
+		Switcher->AddSlot()[SNew(SConvexLogsPanel, Session.ToSharedRef())];
+		Switcher->AddSlot()[SNew(SConvexTrafficPanel, Session.ToSharedRef())];
 		Switcher->SetActiveWidgetIndex(StartPanel);
 
 		return SNew(SDockTab)
@@ -118,6 +123,10 @@ private:
 					.Text(LOCTEXT("DataTab", "Data"))
 					+ SSegmentedControl<int32>::Slot(2)
 					.Text(LOCTEXT("SchemaTab", "Schema"))
+					+ SSegmentedControl<int32>::Slot(3)
+					.Text(LOCTEXT("LogsTab", "Logs"))
+					+ SSegmentedControl<int32>::Slot(4)
+					.Text(LOCTEXT("TrafficTab", "Traffic"))
 				]
 
 				+ SVerticalBox::Slot()

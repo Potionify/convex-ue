@@ -63,6 +63,16 @@ private:
 	bool CanLoadMore() const;
 	FText GetStatusText() const;
 
+	// --- Dev-gated CRUD (Phase 3) --------------------------------------
+	bool CanEditSelectedTable() const;
+	bool HasDocSelection() const;
+	FReply OnAddClicked();
+	FReply OnEditClicked();
+	FReply OnDeleteClicked();
+	/// Run a _system/frontend mutation, surfacing transport errors AND the
+	/// {success:false, error} payloads those mutations return on failure.
+	void RunSystemMutation(const TCHAR* Path, TMap<FString, FConvexValue> Args);
+
 	TSharedPtr<FConvexAdminSession> Session;
 
 	TArray<TSharedPtr<FString>> TableItems;

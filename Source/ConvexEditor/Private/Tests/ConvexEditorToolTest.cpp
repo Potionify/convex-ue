@@ -13,6 +13,7 @@
 #include "ConvexAdminSession.h"
 #include "ConvexDeploymentResolver.h"
 #include "ConvexEditorJson.h"
+#include "ConvexWireTap.h"
 #include "Framework/Docking/TabManager.h"
 #include "HttpModule.h"
 #include "ImageUtils.h"
@@ -23,6 +24,8 @@
 #include "Misc/Paths.h"
 #include "SConvexConnectionPanel.h"
 #include "SConvexFunctionRunner.h"
+#include "SConvexLogsPanel.h"
+#include "SConvexTrafficPanel.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "Widgets/SNullWidget.h"
 
@@ -207,6 +210,19 @@ struct FEditorToolLiveState
 	FConvexResult QueryResult;
 	bool bMutationDone = false;
 	FConvexResult MutationResult;
+
+	// CRUD round-trip through the data-browser mutations.
+	bool bAddDone = false;
+	FConvexResult AddResult;
+	bool bDeleteDone = false;
+	FConvexResult DeleteResult;
+	FString InsertedDocId;
+
+	// Log-stream poll + wire tap.
+	bool bLogPollDone = false;
+	bool bLogPollOk = false;
+	int32 TapFrames = 0;
+	FDelegateHandle TapHandle;
 };
 
 /// The local backend admin key: CONVEX_LOCAL_ADMIN_KEY, else read from
@@ -400,7 +416,7 @@ bool FConvexEditorToolLiveFlow::Update()
 			return false;
 		}
 
-		case 4:  // Mutation result + Slate smoke + teardown.
+		case 4:  // Mutation result, then CRUD add via the system mutation.
 		{
 			if (!State->bMutationDone)
 			{
@@ -411,6 +427,150 @@ bool FConvexEditorToolLiveFlow::Update()
 			Test->TestTrue(TEXT("mutation returned a number"),
 				State->MutationResult.Value.TryGetFloat(NewValue));
 			Test->TestTrue(TEXT("counter incremented"), NewValue >= 2.0);
+
+			// Watch the wire while the CRUD cycle runs.
+			TSharedPtr<FEditorToolLiveState> S = State;
+			ConvexWireTap::SetEnabled(true);
+			State->TapHandle = ConvexWireTap::OnWireFrame().AddLambda(
+				[S](ConvexWireTap::EDirection, const FString&, const FString&)
+				{ ++S->TapFrames; });
+
+			TMap<FString, FConvexValue> Doc;
+			Doc.Add(TEXT("channel"), FConvexValue::String(TEXT("editor-crud-test")));
+			Doc.Add(TEXT("author"), FConvexValue::String(TEXT("automation")));
+			Doc.Add(TEXT("body"), FConvexValue::String(TEXT("inserted by LiveAdminSession")));
+			TMap<FString, FConvexValue> Args;
+			Args.Add(TEXT("table"), FConvexValue::String(TEXT("messages")));
+			Args.Add(TEXT("documents"), FConvexValue::Array({FConvexValue::Object(Doc)}));
+			State->Session->GetClient()->MutationNative(
+				TEXT("_system/frontend/addDocument"), Args,
+				[S](const FConvexResult& Result)
+				{
+					S->AddResult = Result;
+					S->bAddDone = true;
+				});
+			AdvanceTo(5);
+			return false;
+		}
+
+		case 5:  // addDocument result -> find the row -> deleteDocuments.
+		{
+			if (!State->bAddDone)
+			{
+				return false;
+			}
+			Test->TestTrue(TEXT("addDocument transport ok"), State->AddResult.bSuccess);
+			TMap<FString, FConvexValue> Payload;
+			bool bAdded = false;
+			if (State->AddResult.Value.TryGetObject(Payload))
+			{
+				if (const FConvexValue* Success = Payload.Find(TEXT("success")))
+				{
+					Success->TryGetBool(bAdded);
+				}
+			}
+			Test->TestTrue(TEXT("addDocument reported success"), bAdded);
+
+			// Fetch the inserted row's id via listTableScan (desc: newest first).
+			TSharedPtr<FEditorToolLiveState> S = State;
+			TMap<FString, FConvexValue> ScanArgs;
+			ScanArgs.Add(TEXT("table"), FConvexValue::String(TEXT("messages")));
+			ScanArgs.Add(TEXT("limit"), FConvexValue::Float(10));
+			State->Session->GetClient()->QueryNative(
+				TEXT("_system/frontend/listTableScan"), ScanArgs,
+				[S](const FConvexResult& Result)
+				{
+					TArray<FConvexValue> Rows;
+					if (Result.bSuccess && Result.Value.TryGetArray(Rows))
+					{
+						for (const FConvexValue& Row : Rows)
+						{
+							TMap<FString, FConvexValue> Fields;
+							FString Channel, Id;
+							if (Row.TryGetObject(Fields))
+							{
+								if (const FConvexValue* ChannelValue =
+										Fields.Find(TEXT("channel")))
+								{
+									ChannelValue->TryGetString(Channel);
+								}
+								if (const FConvexValue* IdValue = Fields.Find(TEXT("_id")))
+								{
+									IdValue->TryGetString(Id);
+								}
+							}
+							if (Channel == TEXT("editor-crud-test"))
+							{
+								S->InsertedDocId = Id;
+								break;
+							}
+						}
+					}
+					if (S->InsertedDocId.IsEmpty())
+					{
+						S->bDeleteDone = true;  // fail below with a clear message
+						S->DeleteResult =
+							FConvexResult::MakeError(TEXT("inserted row not found"));
+						return;
+					}
+					TMap<FString, FConvexValue> Reference;
+					Reference.Add(TEXT("id"), FConvexValue::String(S->InsertedDocId));
+					Reference.Add(TEXT("tableName"), FConvexValue::String(TEXT("messages")));
+					TMap<FString, FConvexValue> DeleteArgs;
+					DeleteArgs.Add(TEXT("toDelete"),
+						FConvexValue::Array({FConvexValue::Object(Reference)}));
+					S->Session->GetClient()->MutationNative(
+						TEXT("_system/frontend/deleteDocuments"), DeleteArgs,
+						[S](const FConvexResult& Result)
+						{
+							S->DeleteResult = Result;
+							S->bDeleteDone = true;
+						});
+				});
+			AdvanceTo(6);
+			return false;
+		}
+
+		case 6:  // Delete result + one log-stream poll.
+		{
+			if (!State->bDeleteDone)
+			{
+				return false;
+			}
+			Test->TestTrue(TEXT("deleteDocuments succeeded"), State->DeleteResult.bSuccess);
+			Test->TestTrue(TEXT("wire tap captured the CRUD traffic"), State->TapFrames > 0);
+			ConvexWireTap::SetEnabled(false);
+			ConvexWireTap::OnWireFrame().Remove(State->TapHandle);
+
+			TSharedPtr<FEditorToolLiveState> S = State;
+			const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Poll =
+				FHttpModule::Get().CreateRequest();
+			Poll->SetURL(State->Url + TEXT("/api/stream_function_logs?cursor=0"));
+			Poll->SetVerb(TEXT("GET"));
+			Poll->SetHeader(TEXT("Authorization"), TEXT("Convex ") + State->AdminKey);
+			Poll->SetHeader(TEXT("Convex-Client"), TEXT("dashboard-0.0.0"));
+			Poll->SetTimeout(15.0f);
+			Poll->OnProcessRequestComplete().BindLambda(
+				[S](FHttpRequestPtr, FHttpResponsePtr Response, bool bOk)
+				{
+					S->bLogPollOk = bOk && Response.IsValid() &&
+						Response->GetResponseCode() == 200 &&
+						Response->GetContentAsString().Contains(TEXT("newCursor"));
+					S->bLogPollDone = true;
+				});
+			Poll->ProcessRequest();
+			AdvanceTo(7);
+			return false;
+		}
+
+		case 7:  // Log poll result + Slate smoke + teardown.
+		{
+			if (!State->bLogPollDone)
+			{
+				return false;
+			}
+			Test->TestTrue(TEXT("stream_function_logs responds with a cursor"),
+				State->bLogPollOk);
 
 			if (FSlateApplication::IsInitialized())
 			{
@@ -425,11 +585,17 @@ bool FConvexEditorToolLiveFlow::Update()
 					SNew(SConvexDataBrowser, State->Session.ToSharedRef());
 				const TSharedRef<SWidget> Schema =
 					SNew(SConvexSchemaPanel, State->Session.ToSharedRef());
+				const TSharedRef<SWidget> Logs =
+					SNew(SConvexLogsPanel, State->Session.ToSharedRef());
+				const TSharedRef<SWidget> Traffic =
+					SNew(SConvexTrafficPanel, State->Session.ToSharedRef());
 				Test->TestTrue(TEXT("widgets constructed"),
 					&Panel.Get() != &SNullWidget::NullWidget.Get() &&
 						&Runner.Get() != &SNullWidget::NullWidget.Get() &&
 						&Data.Get() != &SNullWidget::NullWidget.Get() &&
-						&Schema.Get() != &SNullWidget::NullWidget.Get());
+						&Schema.Get() != &SNullWidget::NullWidget.Get() &&
+						&Logs.Get() != &SNullWidget::NullWidget.Get() &&
+						&Traffic.Get() != &SNullWidget::NullWidget.Get());
 			}
 
 			State->Session->Disconnect();
@@ -460,6 +626,8 @@ const TCHAR* PanelSuffix(int32 PanelIndex)
 	{
 		case 1: return TEXT("Data");
 		case 2: return TEXT("Schema");
+		case 3: return TEXT("Logs");
+		case 4: return TEXT("Traffic");
 		default: return TEXT("Functions");
 	}
 }
@@ -537,7 +705,7 @@ bool FConvexTabScreenshotFlow::Update()
 	}
 	Tab->RequestCloseTab();
 
-	if (State->PanelIndex >= 2)
+	if (State->PanelIndex >= 4)
 	{
 		if (IConsoleVariable* StartPanel =
 				IConsoleManager::Get().FindConsoleVariable(TEXT("Convex.Editor.StartPanel")))

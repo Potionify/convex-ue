@@ -5,7 +5,10 @@
 #include "ConvexClient.h"
 #include "ConvexEditorJson.h"
 #include "ConvexSubscription.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Framework/Docking/TabManager.h"
 #include "Misc/Base64.h"
+#include "Misc/MessageDialog.h"
 #include "Styling/AppStyle.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
@@ -30,6 +33,75 @@ namespace
 			OneLine = OneLine.Left(PreviewMaxChars) + TEXT("…");
 		}
 		return OneLine;
+	}
+
+	/// Modal JSON editor. Returns unset on cancel.
+	TOptional<FString> ShowJsonDialog(const FText& Title, const FString& InitialText)
+	{
+		TSharedPtr<FString> Result;
+
+		TSharedPtr<SMultiLineEditableTextBox> Box;
+		TSharedRef<SWindow> Window = SNew(SWindow)
+			.Title(Title)
+			.ClientSize(FVector2D(640.f, 420.f))
+			.SupportsMinimize(false)
+			.SupportsMaximize(false);
+
+		Window->SetContent(
+			SNew(SVerticalBox)
+
+			+ SVerticalBox::Slot()
+			.FillHeight(1.f)
+			.Padding(8.f)
+			[
+				SAssignNew(Box, SMultiLineEditableTextBox)
+				.Font(FAppStyle::GetFontStyle("MonospacedText"))
+				.Text(FText::FromString(InitialText))
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.HAlign(HAlign_Right)
+			.Padding(8.f, 0.f, 8.f, 8.f)
+			[
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(0.f, 0.f, 6.f, 0.f)
+				[
+					SNew(SButton)
+					.Text(NSLOCTEXT("ConvexEditor", "DialogOk", "OK"))
+					.OnClicked_Lambda([&Result, &Box, WeakWindow = TWeakPtr<SWindow>(Window)]()
+					{
+						Result = MakeShared<FString>(Box->GetText().ToString());
+						if (const TSharedPtr<SWindow> Pinned = WeakWindow.Pin())
+						{
+							Pinned->RequestDestroyWindow();
+						}
+						return FReply::Handled();
+					})
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				[
+					SNew(SButton)
+					.Text(NSLOCTEXT("ConvexEditor", "DialogCancel", "Cancel"))
+					.OnClicked_Lambda([WeakWindow = TWeakPtr<SWindow>(Window)]()
+					{
+						if (const TSharedPtr<SWindow> Pinned = WeakWindow.Pin())
+						{
+							Pinned->RequestDestroyWindow();
+						}
+						return FReply::Handled();
+					})
+				]
+			]);
+
+		FSlateApplication::Get().AddModalWindow(
+			Window, FGlobalTabmanager::Get()->GetRootWindow());
+		return Result.IsValid() ? TOptional<FString>(*Result) : TOptional<FString>();
 	}
 }
 
@@ -104,12 +176,53 @@ void SConvexDataBrowser::Construct(const FArguments& InArgs, TSharedRef<FConvexA
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
 				.VAlign(VAlign_Center)
-				.Padding(4.f, 0.f, 0.f, 0.f)
+				.Padding(4.f, 0.f, 12.f, 0.f)
 				[
 					SNew(SButton)
 					.Text(LOCTEXT("LoadMore", "Load more"))
 					.IsEnabled(this, &SConvexDataBrowser::CanLoadMore)
 					.OnClicked(this, &SConvexDataBrowser::OnLoadMoreClicked)
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(2.f, 0.f)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("AddDoc", "Add"))
+					.ToolTipText(LOCTEXT("AddDocTip",
+						"Insert a document (dev deployments only)"))
+					.IsEnabled(this, &SConvexDataBrowser::CanEditSelectedTable)
+					.OnClicked(this, &SConvexDataBrowser::OnAddClicked)
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(2.f, 0.f)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("EditDoc", "Edit"))
+					.ToolTipText(LOCTEXT("EditDocTip",
+						"Replace the selected document (dev deployments only)"))
+					.IsEnabled_Lambda([this]()
+						{ return CanEditSelectedTable() && HasDocSelection(); })
+					.OnClicked(this, &SConvexDataBrowser::OnEditClicked)
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(2.f, 0.f)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("DeleteDoc", "Delete"))
+					.ToolTipText(LOCTEXT("DeleteDocTip",
+						"Delete the selected document (dev deployments only)"))
+					.IsEnabled_Lambda([this]()
+						{ return CanEditSelectedTable() && HasDocSelection(); })
+					.OnClicked(this, &SConvexDataBrowser::OnDeleteClicked)
 				]
 			]
 
@@ -455,6 +568,163 @@ FText SConvexDataBrowser::GetStatusText() const
 	}
 	Status += FString::Printf(TEXT("  (%d loaded)"), DocItems.Num());
 	return FText::FromString(Status);
+}
+
+bool SConvexDataBrowser::CanEditSelectedTable() const
+{
+	return Session->CanWrite() && Session->IsConnected() && !SelectedTable.IsEmpty() &&
+		!SelectedTable.StartsWith(TEXT("_"));
+}
+
+bool SConvexDataBrowser::HasDocSelection() const
+{
+	if (!DocList.IsValid())
+	{
+		return false;
+	}
+	TArray<FDocItem> Selection = DocList->GetSelectedItems();
+	return Selection.Num() == 1 && Selection[0].IsValid() &&
+		Selection[0]->Id.Len() > 0 && !Selection[0]->Id.StartsWith(TEXT("("));
+}
+
+FReply SConvexDataBrowser::OnAddClicked()
+{
+	const TOptional<FString> Edited = ShowJsonDialog(
+		FText::Format(LOCTEXT("AddDocTitle", "Add document to '{0}'"),
+			FText::FromString(SelectedTable)),
+		TEXT("{\n\t\n}"));
+	if (!Edited.IsSet())
+	{
+		return FReply::Handled();
+	}
+	bool bParsed = false;
+	const FConvexValue Document = FConvexValue::FromWire(*Edited, bParsed);
+	TMap<FString, FConvexValue> Fields;
+	if (!bParsed || !Document.TryGetObject(Fields))
+	{
+		FMessageDialog::Open(EAppMsgType::Ok,
+			LOCTEXT("AddParseError", "The document must be a JSON object."));
+		return FReply::Handled();
+	}
+	TMap<FString, FConvexValue> Args;
+	Args.Add(TEXT("table"), FConvexValue::String(SelectedTable));
+	Args.Add(TEXT("documents"), FConvexValue::Array({Document}));
+	RunSystemMutation(TEXT("_system/frontend/addDocument"), MoveTemp(Args));
+	return FReply::Handled();
+}
+
+FReply SConvexDataBrowser::OnEditClicked()
+{
+	if (!HasDocSelection())
+	{
+		return FReply::Handled();
+	}
+	const FDocItem Selected = DocList->GetSelectedItems()[0];
+	const TOptional<FString> Edited = ShowJsonDialog(
+		FText::Format(LOCTEXT("EditDocTitle", "Replace document {0}"),
+			FText::FromString(Selected->Id)),
+		Selected->PrettyJson);
+	if (!Edited.IsSet())
+	{
+		return FReply::Handled();
+	}
+	bool bParsed = false;
+	const FConvexValue Document = FConvexValue::FromWire(*Edited, bParsed);
+	TMap<FString, FConvexValue> Fields;
+	if (!bParsed || !Document.TryGetObject(Fields))
+	{
+		FMessageDialog::Open(EAppMsgType::Ok,
+			LOCTEXT("EditParseError", "The document must be a JSON object."));
+		return FReply::Handled();
+	}
+	// System fields are server-managed; replaceDocument wants the new content
+	// only (the id is a separate argument).
+	Fields.Remove(TEXT("_id"));
+	Fields.Remove(TEXT("_creationTime"));
+
+	TMap<FString, FConvexValue> Args;
+	Args.Add(TEXT("id"), FConvexValue::String(Selected->Id));
+	Args.Add(TEXT("document"), FConvexValue::Object(Fields));
+	RunSystemMutation(TEXT("_system/frontend/replaceDocument"), MoveTemp(Args));
+	return FReply::Handled();
+}
+
+FReply SConvexDataBrowser::OnDeleteClicked()
+{
+	if (!HasDocSelection())
+	{
+		return FReply::Handled();
+	}
+	const FDocItem Selected = DocList->GetSelectedItems()[0];
+	const EAppReturnType::Type Confirm = FMessageDialog::Open(EAppMsgType::YesNo,
+		FText::Format(
+			LOCTEXT("DeleteConfirm", "Delete document {0} from '{1}'? This cannot be undone."),
+			FText::FromString(Selected->Id), FText::FromString(SelectedTable)));
+	if (Confirm != EAppReturnType::Yes)
+	{
+		return FReply::Handled();
+	}
+
+	TMap<FString, FConvexValue> Reference;
+	Reference.Add(TEXT("id"), FConvexValue::String(Selected->Id));
+	Reference.Add(TEXT("tableName"), FConvexValue::String(SelectedTable));
+
+	TMap<FString, FConvexValue> Args;
+	// deleteDocuments takes explicit id+table pairs; there is deliberately no
+	// path here that can touch more than the one selected document.
+	Args.Add(TEXT("toDelete"), FConvexValue::Array({FConvexValue::Object(Reference)}));
+	RunSystemMutation(TEXT("_system/frontend/deleteDocuments"), MoveTemp(Args));
+	return FReply::Handled();
+}
+
+void SConvexDataBrowser::RunSystemMutation(const TCHAR* Path, TMap<FString, FConvexValue> Args)
+{
+	UConvexClient* Client = Session->GetClient();
+	if (Client == nullptr)
+	{
+		return;
+	}
+	Client->MutationNative(Path, Args,
+		[PathString = FString(Path)](const FConvexResult& Result)
+		{
+			FString Error;
+			if (!Result.bSuccess)
+			{
+				Error = Result.ErrorMessage;
+			}
+			else
+			{
+				// These mutations report failures as {success:false, error}.
+				TMap<FString, FConvexValue> Payload;
+				if (Result.Value.TryGetObject(Payload))
+				{
+					bool bOk = true;
+					if (const FConvexValue* Success = Payload.Find(TEXT("success")))
+					{
+						Success->TryGetBool(bOk);
+					}
+					if (!bOk)
+					{
+						if (const FConvexValue* ErrorValue = Payload.Find(TEXT("error")))
+						{
+							ErrorValue->TryGetString(Error);
+						}
+						if (Error.IsEmpty())
+						{
+							Error = TEXT("The operation was rejected.");
+						}
+					}
+				}
+			}
+			if (!Error.IsEmpty())
+			{
+				FMessageDialog::Open(EAppMsgType::Ok,
+					FText::Format(
+						NSLOCTEXT("ConvexEditor", "MutationFailed", "{0} failed:\n{1}"),
+						FText::FromString(PathString), FText::FromString(Error)));
+			}
+			// Success needs no handling: the page subscriptions update live.
+		});
 }
 
 TSharedRef<ITableRow> SConvexDataBrowser::MakeTableRow(

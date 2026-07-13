@@ -103,6 +103,15 @@ public:
 			Config.Type == EConvexDeploymentType::Preview;
 	}
 
+	/// Full write gate for editor CRUD: dev/preview deployment AND a valid,
+	/// non-read-only key that holds WriteData (when the backend reports ops).
+	bool CanWrite() const
+	{
+		return IsWriteSafeDeployment() && KeyInfo.bChecked && KeyInfo.bValid &&
+			!KeyInfo.bIsReadOnly &&
+			(KeyInfo.AllowedOps.Num() == 0 || KeyInfo.AllowedOps.Contains(TEXT("WriteData")));
+	}
+
 	/// Fires after any observable state change (connection, key info, specs,
 	/// deployment state). UI repaints from the getters above.
 	DECLARE_MULTICAST_DELEGATE(FOnSessionChanged);

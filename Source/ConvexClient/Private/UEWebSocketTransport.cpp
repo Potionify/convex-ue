@@ -4,6 +4,7 @@
 
 #include "ConvexClientModule.h"
 #include "ConvexUtils.h"
+#include "ConvexWireTap.h"
 
 #include "IWebSocket.h"
 #include "WebSocketsModule.h"
@@ -47,6 +48,9 @@ namespace
 		bool bOpen = false;
 		TArray<std::string> PendingText;
 
+		/// For tagging wire-tap frames with their connection.
+		FString TapUrl;
+
 		void ForwardOpen()
 		{
 			FScopeLock Lock(&ObserverGuard);
@@ -88,7 +92,9 @@ namespace
 			}
 			for (const std::string& Frame : PendingText)
 			{
-				Socket->Send(Utf8ToFString(Frame));
+				FString Text = Utf8ToFString(Frame);
+				ConvexWireTap::Report(ConvexWireTap::EDirection::Outgoing, TapUrl, Text);
+				Socket->Send(Text);
 			}
 			PendingText.Reset();
 		}
@@ -168,8 +174,9 @@ std::unique_ptr<convex::websocket_connection> FUEWebSocketTransport::connect(
 	TSharedRef<FConvexWebSocketState, ESPMode::ThreadSafe> State =
 		MakeShared<FConvexWebSocketState, ESPMode::ThreadSafe>();
 	State->Observer = &observer;
+	State->TapUrl = Utf8ToFString(url);
 
-	const FString Url = Utf8ToFString(url);
+	const FString Url = State->TapUrl;
 	TMap<FString, FString> HeaderMap;
 	for (const auto& Header : headers)
 	{
@@ -207,6 +214,8 @@ std::unique_ptr<convex::websocket_connection> FUEWebSocketTransport::connect(
 		{
 			if (TSharedPtr<FConvexWebSocketState, ESPMode::ThreadSafe> Pinned = WeakState.Pin())
 			{
+				ConvexWireTap::Report(
+					ConvexWireTap::EDirection::Incoming, Pinned->TapUrl, Message);
 				Pinned->ForwardMessage(FStringToUtf8(Message));
 			}
 		});
