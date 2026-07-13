@@ -44,4 +44,16 @@ public:
 	/// Connect to the deployment automatically when the Convex tab opens.
 	UPROPERTY(EditAnywhere, Config, Category = "Connection")
 	bool bAutoConnect = true;
+
+	/// convex-ue-codegen.exe used by the Generate API button. Leave empty to
+	/// auto-discover: the CONVEX_UE_CODEGEN env var, then a convex-ue-codegen
+	/// checkout next to this plugin's repo.
+	UPROPERTY(EditAnywhere, Config, Category = "Code Generation",
+		meta = (FilePathFilter = "convex-ue-codegen.exe|convex-ue-codegen.exe"))
+	FFilePath CodegenExecutable;
+
+	/// Where generated wrapper files land. Must be inside a module of your
+	/// project (e.g. Source/MyGame/ConvexApi) so they compile.
+	UPROPERTY(EditAnywhere, Config, Category = "Code Generation")
+	FDirectoryPath CodegenOutputDir;
 };

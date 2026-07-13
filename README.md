@@ -16,6 +16,12 @@ plugin is fully self-contained, no external dependencies).
 - **UE-native networking**: uses UE's WebSockets and HTTP modules — no
   bundled OpenSSL or third-party sockets, so packaging stays clean across
   platforms.
+- **In-editor dashboard**: a dockable **Convex** tab (Tools menu) with a
+  function runner, live data browser (dev-gated document editing), schema
+  viewer, deployment log tail, and a websocket traffic inspector.
+- **Codegen**: typed C++ and Blueprint wrappers for your deployed functions
+  via [convex-ue-codegen](https://github.com/Potionify/convex-ue-codegen) —
+  from the editor (Generate API), a `.bat`, or CI.
 
 ## Installation
 
@@ -115,6 +121,37 @@ The protocol/state-machine logic lives entirely in
 contributes only transports, UObject wrappers, and Blueprint bindings. Update
 the vendored copy with `Tools/sync-convex-cpp.ps1` (records the source commit
 in `Source/ConvexCore/convex-cpp.version.txt`).
+
+## The Convex editor tab
+
+Open **Tools → Convex** (the `ConvexEditor` module). The tab connects with a
+deploy key resolved the same way the Convex CLI does — process environment
+first (`CONVEX_DEPLOY_KEY`, or the self-hosted pair), then `.env.local`,
+`convex.env.local`, `.env` discovered upward from the project directory; point
+**Editor Preferences → Plugins → Convex Editor** at a specific env file to
+override. Keys are never written to `.ini` files.
+
+| Section | What it does |
+|---|---|
+| **Functions** | Every deployed function (live via `apiSpec`), args editor seeded from the validator, run queries/mutations/actions, pretty results |
+| **Data** | Live table browser with pagination and ordering; on dev/preview deployments (and a non-read-only key) documents can be added, replaced, and deleted |
+| **Schema** | Declared schema per table, live index state incl. backfill, inferred shapes |
+| **Logs** | Tails deployment function logs (structured lines, filter, pause) |
+| **Traffic** | Local inspector of every Convex websocket frame in the process — the editor session and PIE clients |
+
+Writes are hard-disabled on prod-typed deployments; the deployment type comes
+from the deploy-key prefix, and `check_admin_key`'s `allowedOps`/`isReadOnly`
+gate the UI as well.
+
+## Generated typed API
+
+`Tools/generate-convex-api.bat` (or the **Generate API** button in the Convex
+tab) runs [convex-ue-codegen](https://github.com/Potionify/convex-ue-codegen)
+against your deployment and emits `ConvexApi.h/.cpp` (typed native wrappers,
+`TOptional<>` for optional args) plus `ConvexApiBP.h/.cpp` (one Blueprint node
+per function with typed pins) into a folder inside one of your modules —
+`Example/Source/ConvexExample/ConvexApi` shows the output for the integration
+schema.
 
 ## Example project & live test
 

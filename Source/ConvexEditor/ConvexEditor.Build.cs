@@ -27,6 +27,7 @@ public class ConvexEditor : ModuleRules
 			"HTTP",
 			"Json",
 			"UnrealEd",
+			"Projects",
 			// Admin sync client + value types.
 			"ConvexClient",
 			"ConvexCore",

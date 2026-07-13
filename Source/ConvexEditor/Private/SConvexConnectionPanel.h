@@ -30,6 +30,8 @@ private:
 	FSlateColor GetKeyInfoColor() const;
 	FText GetDetailText() const;
 	EVisibility GetProdWarningVisibility() const;
+	FReply OnGenerateApiClicked();
 
 	TSharedPtr<FConvexAdminSession> Session;
+	TSharedPtr<class FMonitoredProcess> CodegenProcess;
 };

@@ -2,14 +2,21 @@
 
 #include "SConvexConnectionPanel.h"
 
+#include "Async/Async.h"
 #include "ConvexAdminSession.h"
+#include "ConvexEditorSettings.h"
+#include "Framework/Notifications/NotificationManager.h"
 #include "ISettingsModule.h"
+#include "Interfaces/IPluginManager.h"
+#include "Misc/MonitoredProcess.h"
+#include "Misc/Paths.h"
 #include "Modules/ModuleManager.h"
 #include "Styling/AppStyle.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
+#include "Widgets/Notifications/SNotificationList.h"
 #include "Widgets/Text/STextBlock.h"
 
 #define LOCTEXT_NAMESPACE "ConvexEditor"
@@ -80,6 +87,21 @@ void SConvexConnectionPanel::Construct(const FArguments& InArgs, TSharedRef<FCon
 						Session->RefreshAndConnect();
 						return FReply::Handled();
 					})
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(4.f, 0.f, 0.f, 0.f)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("GenerateApi", "Generate API"))
+					.ToolTipText(LOCTEXT("GenerateApiTip",
+						"Run convex-ue-codegen against this deployment: emits typed C++ and "
+						"Blueprint wrappers for every deployed function into the configured "
+						"output directory"))
+					.IsEnabled_Lambda([this]() { return Session->GetConfig().IsValid(); })
+					.OnClicked(this, &SConvexConnectionPanel::OnGenerateApiClicked)
 				]
 
 				+ SHorizontalBox::Slot()
@@ -267,6 +289,107 @@ FText SConvexConnectionPanel::GetDetailText() const
 		Detail += FString::Printf(TEXT("  |  %d functions"), NumFunctions);
 	}
 	return FText::FromString(Detail);
+}
+
+FReply SConvexConnectionPanel::OnGenerateApiClicked()
+{
+	const auto Notify = [](const FString& Message, bool bSuccess)
+	{
+		FNotificationInfo Info(FText::FromString(Message));
+		Info.ExpireDuration = 6.f;
+		if (const TSharedPtr<SNotificationItem> Item =
+				FSlateNotificationManager::Get().AddNotification(Info))
+		{
+			Item->SetCompletionState(
+				bSuccess ? SNotificationItem::CS_Success : SNotificationItem::CS_Fail);
+		}
+	};
+
+	if (CodegenProcess.IsValid() && CodegenProcess->Update())
+	{
+		Notify(TEXT("Codegen is already running."), false);
+		return FReply::Handled();
+	}
+
+	const UConvexEditorSettings* Settings = GetDefault<UConvexEditorSettings>();
+
+	// Locate the executable: settings > env var > sibling checkout.
+	FString Exe = Settings->CodegenExecutable.FilePath;
+	if (Exe.IsEmpty())
+	{
+		Exe = FPlatformMisc::GetEnvironmentVariable(TEXT("CONVEX_UE_CODEGEN"));
+	}
+	if (Exe.IsEmpty())
+	{
+		if (const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("Convex")))
+		{
+			// <plugin>/../.. is the repo checkout when developing convex-ue;
+			// the codegen repo conventionally sits next to it.
+			const FString Candidate = FPaths::ConvertRelativePathToFull(
+				Plugin->GetBaseDir() /
+				TEXT("../../../convex-ue-codegen/build/cli/Release/convex-ue-codegen.exe"));
+			if (FPaths::FileExists(Candidate))
+			{
+				Exe = Candidate;
+			}
+		}
+	}
+	if (Exe.IsEmpty() || !FPaths::FileExists(Exe))
+	{
+		Notify(TEXT("convex-ue-codegen.exe not found. Set it in Editor Preferences > "
+					"Plugins > Convex Editor."),
+			false);
+		return FReply::Handled();
+	}
+
+	const FString OutDir = Settings->CodegenOutputDir.Path;
+	if (OutDir.IsEmpty())
+	{
+		Notify(TEXT("Set the codegen output directory (a folder inside one of your "
+					"project's modules) in Editor Preferences > Plugins > Convex Editor."),
+			false);
+		return FReply::Handled();
+	}
+
+	// Credentials travel via inherited environment, not the command line
+	// (command lines are visible to every process on the machine).
+	const FConvexDeploymentConfig& Config = Session->GetConfig();
+	FPlatformMisc::SetEnvironmentVar(TEXT("CONVEX_URL"), *Config.DeploymentUrl);
+	FPlatformMisc::SetEnvironmentVar(TEXT("CONVEX_DEPLOY_KEY"), *Config.AdminKey);
+
+	const FString Args = FString::Printf(TEXT("--out \"%s\" --prefix ConvexApi"), *OutDir);
+	CodegenProcess = MakeShared<FMonitoredProcess>(Exe, Args, /*InHidden=*/true);
+	CodegenProcess->OnCompleted().BindLambda([Notify, OutDir](int32 ReturnCode)
+	{
+		AsyncTask(ENamedThreads::GameThread, [Notify, OutDir, ReturnCode]()
+		{
+			if (ReturnCode == 0)
+			{
+				Notify(FString::Printf(TEXT("Convex API generated into %s"), *OutDir), true);
+			}
+			else
+			{
+				Notify(FString::Printf(
+						   TEXT("convex-ue-codegen failed (exit %d) — see Output Log."),
+						   ReturnCode),
+					false);
+			}
+		});
+	});
+	CodegenProcess->OnOutput().BindLambda([](FString Line)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[convex-ue-codegen] %s"), *Line);
+	});
+	if (!CodegenProcess->Launch())
+	{
+		Notify(TEXT("Failed to launch convex-ue-codegen."), false);
+		CodegenProcess.Reset();
+	}
+
+	// Scrub the key from our own environment again promptly.
+	FPlatformMisc::SetEnvironmentVar(TEXT("CONVEX_DEPLOY_KEY"), TEXT(""));
+	FPlatformMisc::SetEnvironmentVar(TEXT("CONVEX_URL"), TEXT(""));
+	return FReply::Handled();
 }
 
 EVisibility SConvexConnectionPanel::GetProdWarningVisibility() const
