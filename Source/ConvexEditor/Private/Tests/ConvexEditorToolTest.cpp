@@ -11,6 +11,8 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "ConvexAdminSession.h"
+#include "ConvexClient.h"
+#include "ConvexCodegenRunner.h"
 #include "ConvexDeploymentResolver.h"
 #include "ConvexEditorJson.h"
 #include "ConvexWireTap.h"
@@ -23,8 +25,10 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "SConvexConnectionPanel.h"
+#include "SConvexDataBrowser.h"
 #include "SConvexFunctionRunner.h"
 #include "SConvexLogsPanel.h"
+#include "SConvexSchemaPanel.h"
 #include "SConvexTrafficPanel.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "Widgets/SNullWidget.h"
@@ -604,6 +608,56 @@ bool FConvexEditorToolLiveFlow::Update()
 		}
 	}
 	return false;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FConvexVendoredCodegenTest,
+	"Convex.EditorTool.VendoredCodegen",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FConvexVendoredCodegenTest::RunTest(const FString&)
+{
+	// The vendored emission core must produce the same shape of output as the
+	// standalone CLI (byte-parity is enforced upstream by that repo's golden
+	// tests; this guards the vendored copy compiling and running in UE).
+	const FString Spec = TEXT(
+		R"([{"identifier":"counters.js:increment","functionType":"Mutation",)"
+		R"("visibility":{"kind":"public"},"args":{"type":"object","value":{)"
+		R"("name":{"fieldType":{"type":"string"},"optional":false},)"
+		R"("by":{"fieldType":{"type":"number"},"optional":true}}},"returns":null},)"
+		R"({"identifier":"hidden.js:x","functionType":"Query",)"
+		R"("visibility":{"kind":"internal"},"args":null,"returns":null}])");
+
+	ConvexCodegenRunner::FOptions Options;
+	Options.SourceLabel = TEXT("automation test");
+	TMap<FString, FString> Files;
+	const TOptional<FString> Error = ConvexCodegenRunner::Generate(Spec, Options, Files);
+	TestFalse(TEXT("generation succeeded"), Error.IsSet());
+	if (Error.IsSet())
+	{
+		AddError(*Error);
+		return false;
+	}
+	TestEqual(TEXT("four files emitted"), Files.Num(), 4);
+	const FString* Header = Files.Find(TEXT("ConvexApi.h"));
+	if (TestNotNull(TEXT("native header present"), Header))
+	{
+		TestTrue(TEXT("namespaced wrapper"), Header->Contains(TEXT("namespace Counters")));
+		TestTrue(TEXT("optional arg is TOptional"),
+			Header->Contains(TEXT("const TOptional<double>& By")));
+		TestFalse(TEXT("internal function excluded"), Header->Contains(TEXT("Hidden")));
+	}
+	const FString* BpHeader = Files.Find(TEXT("ConvexApiBP.h"));
+	if (TestNotNull(TEXT("BP header present"), BpHeader))
+	{
+		TestTrue(TEXT("BP library class"),
+			BpHeader->Contains(TEXT("UConvexApiCountersLibrary")));
+	}
+
+	// Malformed input must come back as an error, not an exception.
+	TMap<FString, FString> Unused;
+	TestTrue(TEXT("malformed spec yields error"),
+		ConvexCodegenRunner::Generate(TEXT("not json"), Options, Unused).IsSet());
+	return true;
 }
 
 // ------------------------------------------------------- tab screenshot

@@ -145,11 +145,23 @@ gate the UI as well.
 
 ## Generated typed API
 
-`Tools/generate-convex-api.bat` (or the **Generate API** button in the Convex
-tab) runs [convex-ue-codegen](https://github.com/Potionify/convex-ue-codegen)
-against your deployment and emits `ConvexApi.h/.cpp` (typed native wrappers,
-`TOptional<>` for optional args) plus `ConvexApiBP.h/.cpp` (one Blueprint node
-per function with typed pins) into a folder inside one of your modules —
+The plugin is **self-contained** for codegen: the pure emission core of
+[convex-ue-codegen](https://github.com/Potionify/convex-ue-codegen) is
+vendored into the `ConvexEditor` module (like convex-cpp is vendored into
+`ConvexClient`; resync with `Tools/sync-convex-ue-codegen.ps1`). Three ways to
+generate, all producing byte-identical output:
+
+- **Generate API** button in the Convex tab — runs in-process, no external
+  tool.
+- `Tools/generate-convex-api.bat` — headless; uses the `ConvexCodegen`
+  commandlet (`UnrealEditor-Cmd -run=ConvexCodegen -Out=<dir> ...`), or the
+  standalone CLI when a convex-ue-codegen build is available (faster — skips
+  booting headless UE).
+- The standalone repo's CLI / web app, for CI and non-UE workflows.
+
+Output is `ConvexApi.h/.cpp` (typed native wrappers, `TOptional<>` for
+optional args) plus `ConvexApiBP.h/.cpp` (one Blueprint node per function
+with typed pins), emitted into a folder inside one of your modules —
 `Example/Source/ConvexExample/ConvexApi` shows the output for the integration
 schema.
 

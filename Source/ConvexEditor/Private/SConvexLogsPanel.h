@@ -9,6 +9,7 @@
 #include "Widgets/SCompoundWidget.h"
 #include "Widgets/Views/SListView.h"
 
+class FJsonValue;
 class SMultiLineEditableTextBox;
 
 /**

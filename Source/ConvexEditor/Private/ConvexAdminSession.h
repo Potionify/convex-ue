@@ -2,14 +2,13 @@
 
 #pragma once
 
+#include "ConvexClient.h"
 #include "ConvexDelegates.h"
 #include "ConvexDeploymentResolver.h"
+#include "ConvexSubscription.h"
 #include "ConvexValue.h"
 #include "CoreMinimal.h"
 #include "UObject/StrongObjectPtr.h"
-
-class UConvexClient;
-class UConvexSubscription;
 
 /// One deployed function, from _system/cli/modules:apiSpec.
 struct FConvexFunctionSpec

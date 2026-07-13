@@ -3,6 +3,7 @@
 #pragma once
 
 #include "ConvexAdminSession.h"
+#include "ConvexSubscription.h"
 #include "CoreMinimal.h"
 #include "UObject/StrongObjectPtr.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
@@ -10,7 +11,6 @@
 #include "Widgets/Views/SListView.h"
 
 class SMultiLineEditableTextBox;
-class UConvexSubscription;
 
 /**
  * The data tab: live table browser. Tables come from getTableMapping; rows

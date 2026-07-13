@@ -33,5 +33,5 @@ private:
 	FReply OnGenerateApiClicked();
 
 	TSharedPtr<FConvexAdminSession> Session;
-	TSharedPtr<class FMonitoredProcess> CodegenProcess;
+	bool bCodegenRunning = false;
 };
