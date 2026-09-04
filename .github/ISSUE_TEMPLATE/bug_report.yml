@@ -1,0 +1,48 @@
+name: Bug report
+description: Something isn't working as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead? A minimal Blueprint graph, code snippet, or log excerpt helps a lot.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: convex-ue version
+      placeholder: e.g. v0.1.1, or a commit hash
+    validations:
+      required: true
+  - type: input
+    id: engine
+    attributes:
+      label: Engine version
+      placeholder: e.g. UE 5.8.1 stock, or the UnrealEngine-Angelscript fork at commit abc123
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where does it happen?
+      options:
+        - C++ client
+        - Blueprint nodes
+        - Convex editor tab
+        - Generate API / codegen
+        - AngelScript
+        - Building or packaging
+    validations:
+      required: true
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Backend
+      options:
+        - Convex cloud
+        - Self-hosted backend
+        - Not applicable
+    validations:
+      required: true

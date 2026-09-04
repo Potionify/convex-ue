@@ -1,0 +1,41 @@
+name: Vendor sync
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# The plugin compiles a vendored copy of convex-cpp. This job checks out
+# convex-cpp at the commit recorded by Tools/sync-convex-cpp.ps1 and fails
+# if any vendored file differs from it, so a core change can never ship
+# without a re-sync. Building the plugin itself needs an engine install and
+# is not done here.
+jobs:
+  convex-cpp:
+    name: Vendored convex-cpp matches the recorded commit
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: convex-ue
+
+      - name: Read the recorded convex-cpp commit
+        id: stamp
+        shell: pwsh
+        run: |
+          $line = Get-Content convex-ue/Source/ConvexCore/convex-cpp.version.txt | Where-Object { $_ -match '^commit: ([0-9a-f]{40})$' }
+          if (-not $line) { throw "No commit line in convex-cpp.version.txt" }
+          "commit=$($Matches[1])" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/checkout@v5
+        with:
+          repository: Potionify/convex-cpp
+          ref: ${{ steps.stamp.outputs.commit }}
+          path: convex-cpp
+
+      - name: Compare
+        shell: pwsh
+        run: ./convex-ue/Tools/check-vendor-sync.ps1 -SourceRepo (Resolve-Path convex-cpp)
