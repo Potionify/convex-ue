@@ -7,6 +7,7 @@
 #include "ConvexSubscription.h"
 #include "ConvexSubscriptionHandle.h"
 #include "ConvexUtils.h"
+#include "ConvexVersion.h"
 #include "UEHttpTransport.h"
 #include "UEWebSocketTransport.h"
 
@@ -185,7 +186,7 @@ void UConvexClient::Initialize(const FString& DeploymentUrl)
 		Options.deployment_url = Url;
 		Options.websocket = NewImpl->WebSocketTransport;
 		Options.delivery_mode = convex::client_options::delivery::pumped;
-		Options.client_id = "ue-0.1.0";
+		Options.client_id = "ue-" CONVEX_UE_VERSION;
 		NewImpl->Client = std::make_unique<convex::client>(std::move(Options));
 
 		NewImpl->HttpClient = std::make_unique<convex::http_client>(Url, NewImpl->HttpTransport);

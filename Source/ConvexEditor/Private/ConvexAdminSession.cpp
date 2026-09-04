@@ -5,6 +5,7 @@
 #include "ConvexClient.h"
 #include "ConvexEditorSettings.h"
 #include "ConvexSubscription.h"
+#include "ConvexVersion.h"
 #include "Dom/JsonObject.h"
 #include "HttpModule.h"
 #include "Interfaces/IHttpRequest.h"
@@ -158,7 +159,7 @@ void FConvexAdminSession::CheckAdminKey()
 	Request->SetVerb(TEXT("GET"));
 	// Admin scheme is literally "Convex", not "Bearer".
 	Request->SetHeader(TEXT("Authorization"), TEXT("Convex ") + Config.AdminKey);
-	Request->SetHeader(TEXT("Convex-Client"), TEXT("unreal-0.1.0"));
+	Request->SetHeader(TEXT("Convex-Client"), TEXT("unreal-" CONVEX_UE_VERSION));
 	Request->OnProcessRequestComplete().BindLambda(
 		[WeakThis = AsWeak(), Gen](
 			FHttpRequestPtr, FHttpResponsePtr Response, bool bConnectedSuccessfully)
@@ -392,7 +393,7 @@ void FConvexAdminSession::FetchShapes(TFunction<void(bool, FString)> OnDone)
 	Request->SetURL(Config.DeploymentUrl / TEXT("api/shapes2"));
 	Request->SetVerb(TEXT("GET"));
 	Request->SetHeader(TEXT("Authorization"), TEXT("Convex ") + Config.AdminKey);
-	Request->SetHeader(TEXT("Convex-Client"), TEXT("unreal-0.1.0"));
+	Request->SetHeader(TEXT("Convex-Client"), TEXT("unreal-" CONVEX_UE_VERSION));
 	Request->OnProcessRequestComplete().BindLambda(
 		[WeakThis = AsWeak(), Gen, OnDone = MoveTemp(OnDone)](
 			FHttpRequestPtr, FHttpResponsePtr Response, bool bConnectedSuccessfully)

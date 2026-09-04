@@ -2,6 +2,8 @@
 
 #include "ConvexCodegenRunner.h"
 
+#include "ConvexVersion.h"
+
 #include "HttpModule.h"
 #include "Interfaces/IHttpRequest.h"
 #include "Interfaces/IHttpResponse.h"
@@ -59,7 +61,7 @@ void FetchApiSpec(const FString& DeploymentUrl, const FString& AdminKey,
 	Request->SetVerb(TEXT("POST"));
 	Request->SetHeader(TEXT("Authorization"), TEXT("Convex ") + AdminKey);
 	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
-	Request->SetHeader(TEXT("Convex-Client"), TEXT("unreal-0.1.0"));
+	Request->SetHeader(TEXT("Convex-Client"), TEXT("unreal-" CONVEX_UE_VERSION));
 	Request->SetContentAsString(
 		TEXT(R"({"path":"_system/cli/modules:apiSpec","args":{},"format":"json"})"));
 	Request->OnProcessRequestComplete().BindLambda(
