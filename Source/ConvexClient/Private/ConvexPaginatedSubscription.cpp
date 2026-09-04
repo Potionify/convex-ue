@@ -103,6 +103,7 @@ void UConvexPaginatedSubscription::Unsubscribe()
 	// Releasing the handle drops every page subscription via its destructor.
 	Handle.Reset();
 	NotifyReleased();
+	Listeners.Reset();
 }
 
 bool UConvexPaginatedSubscription::IsActive() const
@@ -110,9 +111,18 @@ bool UConvexPaginatedSubscription::IsActive() const
 	return Handle.IsValid();
 }
 
+void UConvexPaginatedSubscription::AttachListener(UObject* Listener)
+{
+	if (Listener)
+	{
+		Listeners.AddUnique(Listener);
+	}
+}
+
 void UConvexPaginatedSubscription::BeginDestroy()
 {
 	Handle.Reset();
+	Listeners.Reset();
 	Super::BeginDestroy();
 }
 

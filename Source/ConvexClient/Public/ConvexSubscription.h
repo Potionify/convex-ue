@@ -39,6 +39,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Convex")
 	bool IsActive() const;
 
+	/// Keep Listener alive for as long as this subscription is: an object
+	/// bound to OnUpdate that nothing else references, such as a script
+	/// adapter that decodes updates before forwarding them. Released on
+	/// Unsubscribe and on destruction. Script only; Blueprint graphs hold
+	/// their listeners in variables.
+	UFUNCTION(meta = (ScriptCallable))
+	void AttachListener(UObject* Listener);
+
 	//~ Begin UObject interface
 	virtual void BeginDestroy() override;
 	//~ End UObject interface
@@ -57,4 +65,7 @@ private:
 
 	TPimplPtr<FConvexSubscriptionHandle> Handle;
 	TWeakObjectPtr<UConvexClient> OwningClient;
+
+	UPROPERTY()
+	TArray<TObjectPtr<UObject>> Listeners;
 };

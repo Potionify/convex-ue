@@ -10,6 +10,7 @@
 #include "ConvexVersion.h"
 #include "UEHttpTransport.h"
 #include "UEWebSocketTransport.h"
+#include "Async/Async.h"
 
 #include <convex/client.h>
 #include <convex/file_storage.h>
@@ -88,6 +89,17 @@ private:
 // PIMPL: owns the native clients and transports. Kept out of the header so the
 // UObject stays free of std::unique_ptr-of-incomplete-type concerns.
 // ---------------------------------------------------------------------------
+// The token store behind SetUserAuthWithRefreshEvent. The native fetcher
+// reads it on a worker thread under the client's lock, so it must not touch
+// the UObject; the refresh request hops to the game thread through a weak
+// pointer instead.
+struct FConvexRefreshableAuth
+{
+	FCriticalSection Lock;
+	FString Token;
+	TWeakObjectPtr<UConvexClient> Client;
+};
+
 struct FConvexClientImpl
 {
 	std::shared_ptr<FUEWebSocketTransport> WebSocketTransport;
@@ -95,6 +107,7 @@ struct FConvexClientImpl
 	std::unique_ptr<convex::client> Client;
 	std::unique_ptr<convex::http_client> HttpClient;
 	TSharedPtr<FConvexPendingOps, ESPMode::ThreadSafe> PendingOps;
+	TSharedPtr<FConvexRefreshableAuth, ESPMode::ThreadSafe> RefreshableAuth;
 };
 
 namespace
@@ -133,6 +146,31 @@ namespace
 			{
 				OnResult(Result);
 			}
+		};
+	}
+
+	// The fetcher installed by SetUserAuthWithRefreshEvent: serve the latest
+	// token and ask the game thread for a fresher one.
+	convex::auth_fetcher MakeRefreshEventFetcher(
+		const TSharedPtr<FConvexRefreshableAuth, ESPMode::ThreadSafe>& State)
+	{
+		return [State](bool /*bForceRefresh*/) -> std::optional<convex::auth_token>
+		{
+			FString Token;
+			{
+				FScopeLock ScopeLock(&State->Lock);
+				Token = State->Token;
+			}
+			const TWeakObjectPtr<UConvexClient> WeakClient = State->Client;
+			AsyncTask(ENamedThreads::GameThread, [WeakClient]
+			{
+				if (UConvexClient* Client = WeakClient.Get())
+				{
+					Client->OnAuthRefreshRequested.Broadcast();
+					Client->OnAuthRefreshRequestedNative.Broadcast();
+				}
+			});
+			return convex::auth_token::user(FStringToUtf8(Token));
 		};
 	}
 
@@ -310,6 +348,7 @@ void UConvexClient::Shutdown()
 	}
 
 	ActiveSubscriptions.Reset();
+	PendingCallbackTargets.Reset();
 }
 
 void UConvexClient::BeginDestroy()
@@ -515,19 +554,63 @@ void UConvexClient::ActionNative(const FString& Path, const TMap<FString, FConve
 void UConvexClient::Query(const FString& Path, const TMap<FString, FConvexValue>& Args,
 	FConvexResultDelegate OnResult)
 {
-	QueryNative(Path, Args, [OnResult](const FConvexResult& Result) { OnResult.ExecuteIfBound(Result); });
+	QueryNative(Path, Args, RootUntilFired(OnResult));
 }
 
 void UConvexClient::Mutation(const FString& Path, const TMap<FString, FConvexValue>& Args,
 	FConvexResultDelegate OnResult)
 {
-	MutationNative(Path, Args, [OnResult](const FConvexResult& Result) { OnResult.ExecuteIfBound(Result); });
+	MutationNative(Path, Args, RootUntilFired(OnResult));
 }
 
 void UConvexClient::Action(const FString& Path, const TMap<FString, FConvexValue>& Args,
 	FConvexResultDelegate OnResult)
 {
-	ActionNative(Path, Args, [OnResult](const FConvexResult& Result) { OnResult.ExecuteIfBound(Result); });
+	ActionNative(Path, Args, RootUntilFired(OnResult));
+}
+
+FConvexResultNative UConvexClient::RootUntilFired(FConvexResultDelegate Delegate)
+{
+	UObject* Target = Delegate.GetUObject();
+	if (Target)
+	{
+		PendingCallbackTargets.Add(Target);
+	}
+	TWeakObjectPtr<UConvexClient> WeakThis(this);
+	return [WeakThis, Delegate, Target](const FConvexResult& Result)
+	{
+		if (UConvexClient* Self = WeakThis.Get())
+		{
+			Self->ReleaseCallbackTarget(Target);
+		}
+		Delegate.ExecuteIfBound(Result);
+	};
+}
+
+FConvexDownloadNative UConvexClient::RootUntilFired(FConvexDownloadDelegate Delegate)
+{
+	UObject* Target = Delegate.GetUObject();
+	if (Target)
+	{
+		PendingCallbackTargets.Add(Target);
+	}
+	TWeakObjectPtr<UConvexClient> WeakThis(this);
+	return [WeakThis, Delegate, Target](bool bSuccess, const TArray<uint8>& Data)
+	{
+		if (UConvexClient* Self = WeakThis.Get())
+		{
+			Self->ReleaseCallbackTarget(Target);
+		}
+		Delegate.ExecuteIfBound(bSuccess, Data);
+	};
+}
+
+void UConvexClient::ReleaseCallbackTarget(UObject* Target)
+{
+	if (Target)
+	{
+		PendingCallbackTargets.RemoveSingle(Target);
+	}
 }
 
 // ===========================================================================
@@ -609,19 +692,19 @@ void UConvexClient::HttpActionNative(const FString& Path, const TMap<FString, FC
 void UConvexClient::HttpQuery(const FString& Path, const TMap<FString, FConvexValue>& Args,
 	FConvexResultDelegate OnResult)
 {
-	HttpQueryNative(Path, Args, [OnResult](const FConvexResult& Result) { OnResult.ExecuteIfBound(Result); });
+	HttpQueryNative(Path, Args, RootUntilFired(OnResult));
 }
 
 void UConvexClient::HttpMutation(const FString& Path, const TMap<FString, FConvexValue>& Args,
 	FConvexResultDelegate OnResult)
 {
-	HttpMutationNative(Path, Args, [OnResult](const FConvexResult& Result) { OnResult.ExecuteIfBound(Result); });
+	HttpMutationNative(Path, Args, RootUntilFired(OnResult));
 }
 
 void UConvexClient::HttpAction(const FString& Path, const TMap<FString, FConvexValue>& Args,
 	FConvexResultDelegate OnResult)
 {
-	HttpActionNative(Path, Args, [OnResult](const FConvexResult& Result) { OnResult.ExecuteIfBound(Result); });
+	HttpActionNative(Path, Args, RootUntilFired(OnResult));
 }
 
 // ===========================================================================
@@ -657,8 +740,7 @@ void UConvexClient::UploadFileNative(const FString& UploadUrl, const TArray<uint
 void UConvexClient::UploadFile(const FString& UploadUrl, const TArray<uint8>& Data,
 	const FString& ContentType, FConvexResultDelegate OnDone)
 {
-	UploadFileNative(UploadUrl, Data, ContentType,
-		[OnDone](const FConvexResult& Result) { OnDone.ExecuteIfBound(Result); });
+	UploadFileNative(UploadUrl, Data, ContentType, RootUntilFired(OnDone));
 }
 
 void UConvexClient::DownloadFileNative(const FString& Url, FConvexDownloadNative OnDone)
@@ -713,8 +795,7 @@ void UConvexClient::DownloadFileNative(const FString& Url, FConvexDownloadNative
 
 void UConvexClient::DownloadFile(const FString& Url, FConvexDownloadDelegate OnDone)
 {
-	DownloadFileNative(Url,
-		[OnDone](bool bSuccess, const TArray<uint8>& Data) { OnDone.ExecuteIfBound(bSuccess, Data); });
+	DownloadFileNative(Url, RootUntilFired(OnDone));
 }
 
 // ===========================================================================
@@ -726,7 +807,17 @@ void UConvexClient::SetUserAuth(const FString& Jwt)
 	try
 	{
 		const convex::auth_token Token = convex::auth_token::user(FStringToUtf8(Jwt));
-		if (Impl && Impl->Client) { Impl->Client->set_auth(Token); }
+		convex::auth_fetcher Fetcher;
+		if (Impl && Impl->RefreshableAuth)
+		{
+			{
+				FScopeLock ScopeLock(&Impl->RefreshableAuth->Lock);
+				Impl->RefreshableAuth->Token = Jwt;
+			}
+			// set_auth replaces the fetcher, so keep the refresh requests on.
+			Fetcher = MakeRefreshEventFetcher(Impl->RefreshableAuth);
+		}
+		if (Impl && Impl->Client) { Impl->Client->set_auth(Token, std::move(Fetcher)); }
 		if (Impl && Impl->HttpClient) { Impl->HttpClient->set_auth(Token); }
 	}
 	catch (const std::exception& Error)
@@ -735,10 +826,26 @@ void UConvexClient::SetUserAuth(const FString& Jwt)
 	}
 }
 
+void UConvexClient::SetUserAuthWithRefreshEvent(const FString& Jwt)
+{
+	if (!Impl)
+	{
+		UE_LOG(LogConvex, Error, TEXT("SetUserAuthWithRefreshEvent called before Initialize"));
+		return;
+	}
+	if (!Impl->RefreshableAuth)
+	{
+		Impl->RefreshableAuth = MakeShared<FConvexRefreshableAuth, ESPMode::ThreadSafe>();
+		Impl->RefreshableAuth->Client = this;
+	}
+	SetUserAuth(Jwt);
+}
+
 void UConvexClient::SetUserAuthWithRefresh(const FString& Jwt, FConvexAuthRefreshNative RefreshFetcher)
 {
 	try
 	{
+		if (Impl) { Impl->RefreshableAuth.Reset(); }
 		const convex::auth_token Token = convex::auth_token::user(FStringToUtf8(Jwt));
 		convex::auth_fetcher Fetcher;
 		if (RefreshFetcher)
@@ -769,6 +876,7 @@ void UConvexClient::SetAdminAuth(const FString& Key)
 {
 	try
 	{
+		if (Impl) { Impl->RefreshableAuth.Reset(); }
 		const convex::auth_token Token = convex::auth_token::admin(FStringToUtf8(Key));
 		if (Impl && Impl->Client) { Impl->Client->set_auth(Token); }
 		if (Impl && Impl->HttpClient) { Impl->HttpClient->set_auth(Token); }
@@ -783,6 +891,7 @@ void UConvexClient::ClearAuth()
 {
 	try
 	{
+		if (Impl) { Impl->RefreshableAuth.Reset(); }
 		const convex::auth_token Token = convex::auth_token::none();
 		if (Impl && Impl->Client) { Impl->Client->set_auth(Token); }
 		if (Impl && Impl->HttpClient) { Impl->HttpClient->set_auth(Token); }

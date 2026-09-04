@@ -104,6 +104,10 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FConvexServerLogDelegate, FConvexLog
 /// SetUserAuth call.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FConvexAuthFailureDelegate, FString, Reason);
 
+/// The client is reconnecting and wants a fresh user token; see
+/// UConvexClient::SetUserAuthWithRefreshEvent.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FConvexAuthRefreshRequestedDelegate);
+
 /// File-download completion callback.
 DECLARE_DYNAMIC_DELEGATE_TwoParams(FConvexDownloadDelegate, bool, bSuccess, const TArray<uint8>&, Data);
 
@@ -129,6 +133,9 @@ DECLARE_MULTICAST_DELEGATE_OneParam(FConvexServerLogNative, const FConvexLogEntr
 
 /// Native multicast terminal auth failure.
 DECLARE_MULTICAST_DELEGATE_OneParam(FConvexAuthFailureNative, const FString&);
+
+/// Native multicast refresh request.
+DECLARE_MULTICAST_DELEGATE(FConvexAuthRefreshRequestedNative);
 
 /// Fetches a fresh user JWT when the client reconnects (bForceRefresh=true
 /// means the previous token may be expired). Return an unset optional to keep

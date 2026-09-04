@@ -132,6 +132,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Convex")
 	bool IsActive() const;
 
+	/// Keep Listener alive for as long as this subscription is; see
+	/// UConvexSubscription::AttachListener.
+	UFUNCTION(meta = (ScriptCallable))
+	void AttachListener(UObject* Listener);
+
 	//~ Begin UObject interface
 	virtual void BeginDestroy() override;
 	//~ End UObject interface
@@ -150,4 +155,7 @@ private:
 
 	TPimplPtr<FConvexPaginatedHandle> Handle;
 	TWeakObjectPtr<UConvexClient> OwningClient;
+
+	UPROPERTY()
+	TArray<TObjectPtr<UObject>> Listeners;
 };

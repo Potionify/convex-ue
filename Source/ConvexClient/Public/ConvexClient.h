@@ -43,6 +43,9 @@ class CONVEXCLIENT_API UConvexClient : public UObject
 public:
 	/// Build the client for a deployment URL and start connecting. Succeeds at
 	/// most once; a failed attempt (bad URL) may be retried with a new URL.
+	/// Not a Blueprint node: Blueprint gets clients from UConvexSubsystem.
+	/// Script can construct a client and call this directly.
+	UFUNCTION(meta = (ScriptCallable))
 	void Initialize(const FString& DeploymentUrl);
 
 	/// True once Initialize succeeded. A client that is not initialized (never
@@ -57,6 +60,7 @@ public:
 
 	/// Tear down the client (joins worker threads, completes pending callbacks
 	/// with errors). Idempotent; called automatically on destruction.
+	UFUNCTION(meta = (ScriptCallable))
 	void Shutdown();
 
 	//~ Begin UObject interface
@@ -76,6 +80,12 @@ public:
 	/// They carry the ScriptCallable metadata, which the Hazelight
 	/// UnrealEngine-Angelscript fork reads to bind them into script without
 	/// making them Blueprint nodes. Stock UE ignores the metadata.
+	///
+	/// The one-shot forms (Query, Mutation, Action, the HTTP trio, UploadFile,
+	/// DownloadFile) keep the delegate's target object alive until the
+	/// callback has fired, so a caller may bind a freshly created object and
+	/// let go of it. Subscriptions do not: their lifetime is the caller's,
+	/// through the returned handle (see UConvexSubscription::AttachListener).
 	UFUNCTION(meta = (ScriptCallable))
 	UConvexSubscription* Subscribe(const FString& Path, const TMap<FString, FConvexValue>& Args,
 		FConvexResultDelegate OnUpdate);
@@ -156,9 +166,21 @@ public:
 	// ------------------------------------------------------------------
 
 	/// Authenticate as an end user with an OIDC JWT. This is the auth path
-	/// meant for shipped clients.
+	/// meant for shipped clients. After SetUserAuthWithRefreshEvent, this
+	/// also replaces the token the client presents on reconnects.
 	UFUNCTION(BlueprintCallable, Category = "Convex|Auth")
 	void SetUserAuth(const FString& Jwt);
+
+	/// Authenticate with a JWT and turn on refresh requests: every time the
+	/// client reconnects it presents the most recent token given to
+	/// SetUserAuth and fires OnAuthRefreshRequested on the game thread, so
+	/// game code can ask its identity provider for a fresh token and pass it
+	/// to SetUserAuth. Tokens that expire on a schedule are best refreshed
+	/// ahead of time through SetUserAuth; the event covers the reconnect
+	/// that happens between two refreshes. ClearAuth, SetAdminAuth, and
+	/// SetUserAuthWithRefresh turn the requests off again.
+	UFUNCTION(BlueprintCallable, Category = "Convex|Auth")
+	void SetUserAuthWithRefreshEvent(const FString& Jwt);
 
 	/// Native-only: authenticate with a JWT plus a refresh fetcher the client
 	/// invokes on every reconnect (so an expired token is replaced instead of
@@ -183,6 +205,13 @@ public:
 
 	/// Native mirror of OnAuthFailed.
 	FConvexAuthFailureNative OnAuthFailedNative;
+
+	/// Fires (game thread) on every reconnect after SetUserAuthWithRefreshEvent.
+	UPROPERTY(BlueprintAssignable, Category = "Convex|Auth")
+	FConvexAuthRefreshRequestedDelegate OnAuthRefreshRequested;
+
+	/// Native mirror of OnAuthRefreshRequested.
+	FConvexAuthRefreshRequestedNative OnAuthRefreshRequestedNative;
 
 	// ------------------------------------------------------------------
 	// Connection
@@ -225,6 +254,12 @@ public:
 private:
 	bool Tick(float DeltaTime);
 
+	/// Wrap a one-shot dynamic delegate so its target object stays rooted in
+	/// PendingCallbackTargets until the callback fires (game thread).
+	FConvexResultNative RootUntilFired(FConvexResultDelegate Delegate);
+	FConvexDownloadNative RootUntilFired(FConvexDownloadDelegate Delegate);
+	void ReleaseCallbackTarget(UObject* Target);
+
 	/// Map a core log entry to FConvexLogEntry, write it to LogConvex, and
 	/// broadcast the delegates. Game thread only.
 	void HandleServerLog(const convex::log_entry& Entry);
@@ -239,6 +274,12 @@ private:
 	/// force-releases these before destroying the client.
 	UPROPERTY()
 	TArray<TObjectPtr<UConvexPaginatedSubscription>> ActivePaginatedSubscriptions;
+
+	/// Target objects of one-shot dynamic delegates that have not fired yet.
+	/// One entry per pending callback, so an object waiting on several calls
+	/// is released only when the last one completes.
+	UPROPERTY()
+	TArray<TObjectPtr<UObject>> PendingCallbackTargets;
 
 	TPimplPtr<FConvexClientImpl> Impl;
 	FTSTicker::FDelegateHandle TickerHandle;

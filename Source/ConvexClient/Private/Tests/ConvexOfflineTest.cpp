@@ -9,6 +9,8 @@
 
 #include "ConvexClient.h"
 #include "ConvexResult.h"
+#include "ConvexSubscription.h"
+#include "ConvexTestProbe.h"
 #include "ConvexValue.h"
 #include "Misc/AutomationTest.h"
 
@@ -180,6 +182,73 @@ bool FConvexOfflineHttpShutdown::RunTest(const FString& Parameters)
 	TestEqual(TEXT("callback fired exactly once by the time Shutdown returns"), *CallCount, 1);
 	TestFalse(TEXT("callback carried an error result"), Captured->bSuccess);
 	TestFalse(TEXT("error message is populated"), Captured->ErrorMessage.IsEmpty());
+	return true;
+}
+
+// ---------------------------------------------------------------------------
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FConvexOfflineOneShotRootsTarget, "Convex.Offline.OneShotRootsDelegateTarget",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext |
+		EAutomationTestFlags::ProductFilter)
+
+bool FConvexOfflineOneShotRootsTarget::RunTest(const FString& Parameters)
+{
+	UConvexClient* Client = NewObject<UConvexClient>();
+	Client->AddToRoot();
+	Client->Initialize(TEXT("http://127.0.0.1:65001"));  // valid shape, nothing listening
+	if (!TestTrue(TEXT("initialized"), Client->IsInitialized())) return true;
+
+	// The delegate target has no other reference. A one-shot call must keep
+	// it alive through a garbage collection until the callback has fired.
+	TWeakObjectPtr<UConvexTestProbe> Probe = NewObject<UConvexTestProbe>();
+	FConvexResultDelegate OnResult;
+	OnResult.BindDynamic(Probe.Get(), &UConvexTestProbe::OnResult);
+	Client->HttpQuery(TEXT("values:kitchenSink"), {}, OnResult);
+
+	CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+	if (!TestTrue(TEXT("target survives GC while the call is pending"), Probe.IsValid())) return true;
+
+	// Shutdown fails the pending call, which fires the callback and releases
+	// the target.
+	Client->Shutdown();
+	TestEqual(TEXT("callback reached the target"), Probe->Calls, 1);
+	CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+	TestFalse(TEXT("target is collectable once the callback fired"), Probe.IsValid());
+
+	Client->RemoveFromRoot();
+	return true;
+}
+
+// ---------------------------------------------------------------------------
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FConvexOfflineSubscriptionListener, "Convex.Offline.SubscriptionAttachListener",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext |
+		EAutomationTestFlags::ProductFilter)
+
+bool FConvexOfflineSubscriptionListener::RunTest(const FString& Parameters)
+{
+	UConvexClient* Client = NewObject<UConvexClient>();
+	Client->AddToRoot();
+	Client->Initialize(TEXT("http://127.0.0.1:65001"));
+	if (!TestTrue(TEXT("initialized"), Client->IsInitialized())) return true;
+
+	// Subscribing needs no connection: the client queues it. An attached
+	// listener lives as long as the subscription and no longer.
+	UConvexSubscription* Subscription = Client->SubscribeNative(TEXT("counters:get"), {}, nullptr);
+	if (!TestNotNull(TEXT("subscription handle"), Subscription)) return true;
+
+	TWeakObjectPtr<UConvexTestProbe> Listener = NewObject<UConvexTestProbe>();
+	Subscription->AttachListener(Listener.Get());
+
+	CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+	TestTrue(TEXT("listener survives GC while subscribed"), Listener.IsValid());
+
+	Subscription->Unsubscribe();
+	CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+	TestFalse(TEXT("listener is collectable after Unsubscribe"), Listener.IsValid());
+
+	Client->Shutdown();
+	Client->RemoveFromRoot();
 	return true;
 }
 

@@ -24,6 +24,7 @@ void UConvexSubscription::Unsubscribe()
 		UE_LOG(LogConvex, Error, TEXT("UConvexSubscription::Unsubscribe failed: %hs"), Error.what());
 	}
 	NotifyReleased();
+	Listeners.Reset();
 }
 
 bool UConvexSubscription::IsActive() const
@@ -31,10 +32,19 @@ bool UConvexSubscription::IsActive() const
 	return Handle && Handle->Native.active();
 }
 
+void UConvexSubscription::AttachListener(UObject* Listener)
+{
+	if (Listener)
+	{
+		Listeners.AddUnique(Listener);
+	}
+}
+
 void UConvexSubscription::BeginDestroy()
 {
 	// Releasing the handle unsubscribes via its RAII destructor.
 	Handle.Reset();
+	Listeners.Reset();
 	Super::BeginDestroy();
 }
 
