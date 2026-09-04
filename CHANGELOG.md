@@ -4,6 +4,38 @@ Notable changes per release. Versions follow [semantic versioning](https://semve
 with the caveat that 0.x means the API may still move between minor versions.
 The vendored convex-cpp commit is recorded in `Source/ConvexCore/convex-cpp.version.txt`.
 
+## [0.2.0] — Unreleased
+
+### Added
+
+- Script mixins: on the AngelScript fork, `FConvexValue`, `FConvexResult`
+  and `FConvexPaginatedSnapshot` gain methods such as
+  `Result.Value.Field("player.hp").AsFloat()`, `Get`, `HasField`, `At`,
+  `Keys`, `ToJson` and `Describe`. Blueprint is unchanged.
+- Codegen emits a script struct for every declared object shape, a
+  `ConvexApi::Types` namespace that decodes and encodes them, and a typed
+  delegate per function with a declared return. Needs convex-ue-codegen
+  0.2.0; regenerate the API after upgrading.
+- `SetUserAuthWithRefreshEvent` and the `OnAuthRefreshRequested` event: the
+  client presents the last token given to `SetUserAuth` on every reconnect
+  and asks game code for a fresh one, from Blueprint or script.
+- `Initialize` and `Shutdown` are script-callable, so script can own a
+  client without the subsystem.
+- `AttachListener` on both subscription classes keeps an adapter object
+  alive for the life of the subscription.
+- Live script tests against the local backend, run by
+  `convex-ue-build.bat angelscript`, and a second generated script file
+  in the Example project that covers typed returns.
+
+### Changed
+
+- The one-shot dynamic-delegate calls (`Query`, `Mutation`, `Action`, the
+  HTTP trio, `UploadFile`, `DownloadFile`) keep the delegate's target object
+  alive until the callback fires.
+- Generated script wrappers for functions with a declared return take the
+  typed delegate instead of `FConvexResultDelegate`, and declared object
+  arguments take the struct instead of `FConvexValue`.
+
 ## [0.1.1] — 2026-09-04
 
 ### Added

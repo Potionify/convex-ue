@@ -100,6 +100,12 @@ Client->MutationNative(TEXT("messages:send"),
 ```
 
 `SetUserAuth(Jwt)` authenticates as a user and `ClearAuth()` drops it.
+Tokens expire, so call `SetUserAuth` again whenever your identity provider
+issues a new one. `SetUserAuthWithRefreshEvent(Jwt)` adds a reconnect
+hook: the client presents the most recent token on every reconnect and
+fires `OnAuthRefreshRequested` on the game thread, from where Blueprint or
+script can fetch a fresh token and pass it to `SetUserAuth`. C++ can
+instead give `SetUserAuthWithRefresh` a fetcher the client calls itself.
 `SetAdminAuth(DeployKey)` exists in C++ only and is deliberately not
 Blueprint-callable. Deployment keys are secrets, and anything referenced
 from a Blueprint graph can end up in cooked assets and packaged builds. Use
@@ -205,45 +211,65 @@ difference.
 
 Function libraries become namespaces in script. `UConvexBlueprintLibrary`
 is `Convex::`, and a generated `UConvexApiCountersLibrary` is
-`ConvexApiCounters::`.
+`ConvexApiCounters::`. The value, result and snapshot structs also carry
+methods in script, bound from `UConvexScriptMixins` through the fork's
+`ScriptMixin` metadata: `Result.Value.Field("player.stats.hp").AsFloat()`
+reads a nested number, `Get` reads one field by exact name, `HasField`,
+`At`, `Length`, `Keys` and `ToJson` do what their names say, and every
+accessor returns a default instead of failing, with `AsIntOr` and friends
+taking the fallback.
 
 ```angelscript
 class AScoreboard : AActor
 {
     UFUNCTION()
-    void OnScores(FConvexResult Result)
+    void OnScores(TArray<FConvexApiScoresTopElement> Scores, FConvexResult Result)
     {
-        bool bOk = false;
-        if (Result.bSuccess) Print(Convex::ValueToJsonString(Result.Value, bOk));
+        if (Result.bSuccess) Print("top: " + Scores[0].Player);
+        else Print(Result.Describe());
     }
 
     UFUNCTION(BlueprintOverride)
     void BeginPlay()
     {
         UConvexClient Client = UConvexSubsystem::Get().GetDefaultClient();
-        FConvexResultDelegate Handler;
+        FConvexApiScoresTopDelegate Handler;
         Handler.BindUFunction(this, n"OnScores");
         ConvexApi::Scores::WatchTop(Client, 10, Handler);
     }
 }
 ```
 
-`ConvexApi::Scores::WatchTop` comes from the generated `ConvexApi.as`.
-Set **Script output directory** in Editor Preferences > Plugins > Convex
-Editor (or pass `-ScriptOut=<dir>` to the commandlet, `-script-out <dir>`
-to `generate-convex-api.bat`) and Generate API writes the file there. Point
-it at your project's `Script/` folder. The wrappers only call the plugin,
-so they need no generated C++ and no build; the fork reloads them on save.
-Functions with optional arguments get two overloads, required-only and
-all-arguments, because the fork's `TOptional` cannot hold containers.
+`ConvexApi::Scores::WatchTop`, the `FConvexApiScoresTopElement` struct and
+the delegate come from the generated `ConvexApi.as`. Every object shape the
+deployed functions declare is a script struct, and a function with a
+declared return takes a typed delegate whose second parameter is the raw
+`FConvexResult`. Functions without a declared return keep
+`FConvexResultDelegate`. Set **Script output directory** in Editor
+Preferences > Plugins > Convex Editor (or pass `-ScriptOut=<dir>` to the
+commandlet, `-script-out <dir>` to `generate-convex-api.bat`) and Generate
+API writes the file there. Point it at your project's `Script/` folder. The
+wrappers only call the plugin, so they need no generated C++ and no build;
+the fork reloads them on save. Functions with optional arguments get two
+overloads, required-only and all-arguments, because the fork's `TOptional`
+cannot hold containers.
+
+Script can also own a client: `Initialize` and `Shutdown` are
+script-callable, and `SetUserAuthWithRefreshEvent` plus the
+`OnAuthRefreshRequested` event let script supply a fresh token on every
+reconnect.
 
 Build against the fork with `convex-ue-build.bat angelscript` after setting
 `CONVEX_UEAS_ENGINE` to the fork's root. The command copies the Example
 project and the plugin to a work folder (fork binaries never mix with a
 stock build), builds there, and runs `Example/Script/ConvexApi_Test.as`
-through the fork's `AngelscriptTest` commandlet. Prebuilt binaries from
-`Dist/` do not load on the fork, which patches CoreUObject and UHT. Build
-the plugin from source there like everything else.
+through the fork's `AngelscriptTest` commandlet. The tests compile against
+`ConvexApi.as` (the local backend's API) and `ConvexFixture.as` (the
+codegen golden fixture, which declares return shapes), and the live ones
+talk to the Docker backend at 127.0.0.1:3210, skipping when it is down.
+Prebuilt binaries from `Dist/` do not load on the fork, which patches
+CoreUObject and UHT. Build the plugin from source there like everything
+else.
 
 ## Example project and live test
 
