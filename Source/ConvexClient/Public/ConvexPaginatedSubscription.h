@@ -87,9 +87,10 @@ using FConvexPaginatedUpdateNativeFn = TFunction<void(const FConvexPaginatedSnap
  *
  * Every loaded page is a live server subscription: items keep updating, and
  * page boundaries stay seam-free across updates and reconnects (query
- * journals). LoadMore appends the next page; changing circumstances the
- * helper cannot patch over (stale cursors, pages past the server read limit)
- * reset the list to a fresh first page automatically.
+ * journals). LoadMore appends the next page. A page that outgrows the
+ * server's read limits is split in two in place, so loaded pages stay put;
+ * only stale cursors reset the list to a fresh first page, and that happens
+ * automatically.
  *
  * All updates are delivered on the game thread. Destroying the object (or
  * calling Unsubscribe) drops every page subscription.
