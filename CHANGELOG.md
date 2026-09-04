@@ -21,6 +21,9 @@ The vendored convex-cpp commit is recorded in `Source/ConvexCore/convex-cpp.vers
   page whose range the server reports incomplete is held back from
   `Results`, and `Status` returns to `LoadingMore` until the split repairs
   it, so the list never shows a hole. Only stale cursors still reset.
+- `convex-ue-build.bat` and `Tools/generate-convex-api.bat` read the engine
+  root from `CONVEX_UE_ENGINE` and stop with a message when it is unset,
+  instead of falling back to a fixed path.
 
 ## [0.1.0] — 2026-07-12
 

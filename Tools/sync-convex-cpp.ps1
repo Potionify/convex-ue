@@ -5,7 +5,7 @@
 .DESCRIPTION
     Copies the library from a sibling convex-cpp checkout:
       * headers -> ConvexCore/Public   (consumers #include <convex/client.h>)
-      * sources + nlohmann/json.hpp -> ConvexClient/Private (compiled there:
+      * sources + third_party/nlohmann -> ConvexClient/Private (compiled there:
         the vendored classes carry no UE *_API export macros, so they cannot
         cross a DLL boundary; ConvexCore only publishes the include path)
     Vendored .cpp expect "detail/..." (relative to src) and
@@ -20,7 +20,7 @@
     Path to the convex-cpp checkout. Defaults to the sibling repo.
 #>
 param(
-    [string]$SourceRepo = "F:\GitHub-Potionify\potionify-workspace\convex-cpp"
+    [string]$SourceRepo = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) "convex-cpp")
 )
 
 $ErrorActionPreference = "Stop"
@@ -32,7 +32,7 @@ $ClientRoot = Join-Path $PluginRoot "Source\ConvexClient"
 
 $SrcInclude     = Join-Path $SourceRepo "include\convex"
 $SrcSrc         = Join-Path $SourceRepo "src"
-$SrcThirdParty  = Join-Path $SourceRepo "third_party\nlohmann\json.hpp"
+$SrcThirdParty  = Join-Path $SourceRepo "third_party\nlohmann"
 
 $DstInclude     = Join-Path $CoreRoot "Public\convex-cpp\include\convex"
 $DstSrc         = Join-Path $ClientRoot "Private\convex-cpp\src"
@@ -41,7 +41,7 @@ $DstThirdParty  = Join-Path $ClientRoot "Private\convex-cpp\third_party\nlohmann
 # --- Validate source ------------------------------------------------------
 if (-not (Test-Path $SrcInclude))    { throw "Source headers not found: $SrcInclude" }
 if (-not (Test-Path $SrcSrc))        { throw "Source sources not found: $SrcSrc" }
-if (-not (Test-Path $SrcThirdParty)) { throw "nlohmann/json.hpp not found: $SrcThirdParty" }
+if (-not (Test-Path $SrcThirdParty)) { throw "third_party/nlohmann not found: $SrcThirdParty" }
 
 Write-Host "Syncing convex-cpp from: $SourceRepo"
 
@@ -67,8 +67,8 @@ Write-Host "  Copying sources -> $DstSrc"
 Copy-Item -Path (Join-Path $SrcSrc "*") -Destination $DstSrc -Recurse -Force
 
 # third_party single-header
-Write-Host "  Copying nlohmann/json.hpp -> $DstThirdParty"
-Copy-Item -Path $SrcThirdParty -Destination $DstThirdParty -Force
+Write-Host "  Copying third_party/nlohmann -> $DstThirdParty"
+Copy-Item -Path (Join-Path $SrcThirdParty "*") -Destination $DstThirdParty -Force
 
 # --- Record provenance ----------------------------------------------------
 $commit = "unknown"
@@ -84,7 +84,7 @@ try {
 $stamp   = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
 $version = @(
     "convex-cpp vendored sync",
-    "source: $SourceRepo",
+    "source: https://github.com/Potionify/convex-cpp",
     "commit: $commit",
     "synced: $stamp"
 ) -join "`n"

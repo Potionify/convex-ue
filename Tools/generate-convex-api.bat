@@ -18,7 +18,7 @@ setlocal
 ::
 :: Defaults: output Example\Source\ConvexExample\ConvexApi, prefix ConvexApi,
 :: AngelScript wrappers into Example\Script (pass -script-out "" to skip them).
-:: Engine root: CONVEX_UE_ENGINE or F:\UE5\UE_5.8.
+:: Engine root: CONVEX_UE_ENGINE (needed only when no standalone CLI is found).
 ::=============================================================================
 
 set "REPO_ROOT=%~dp0.."
@@ -53,7 +53,6 @@ if exist "%EXE%" (
 
 :: --- Self-contained path: the ConvexCodegen commandlet ----------------------
 set "ENGINE=%CONVEX_UE_ENGINE%"
-if "%ENGINE%"=="" set "ENGINE=F:\UE5\UE_5.8"
 set "EDITOR_CMD=%ENGINE%\Engine\Binaries\Win64\UnrealEditor-Cmd.exe"
 if not exist "%EDITOR_CMD%" (
     echo [generate-convex-api] UnrealEditor-Cmd.exe not found at %EDITOR_CMD%.

@@ -14,7 +14,7 @@ setlocal EnableDelayedExpansion
 ::   convex-ue-build.bat clean           Delete Binaries/Intermediate.
 ::
 :: Options (any order, after the command):
-::   -engine=<path>   UE root (default: %CONVEX_UE_ENGINE% or F:\UE5\UE_5.8)
+::   -engine=<path>   UE root (default: %CONVEX_UE_ENGINE%)
 ::   -config=<cfg>    Build configuration (default: Development)
 ::   -out=<path>      Package output dir (default: <repo>\Dist\Convex)
 ::   -work=<path>     angelscript only: where the fork build copy lives
@@ -39,7 +39,7 @@ set "COMMAND=%~1"
 if "%COMMAND%"=="" set "COMMAND=dev"
 if not "%COMMAND%"=="" shift /1
 
-if defined CONVEX_UE_ENGINE (set "ENGINE=%CONVEX_UE_ENGINE%") else (set "ENGINE=F:\UE5\UE_5.8")
+set "ENGINE=%CONVEX_UE_ENGINE%"
 set "CONFIG=Development"
 set "OUTDIR=%REPO_ROOT%\Dist\Convex"
 if defined CONVEX_UEAS_WORK (set "WORKDIR=%CONVEX_UEAS_WORK%") else (set "WORKDIR=%LOCALAPPDATA%\convex-ue-as")
@@ -74,6 +74,10 @@ set "RUNUAT=%ENGINE%\Engine\Build\BatchFiles\RunUAT.bat"
 set "EDITOR_CMD=%ENGINE%\Engine\Binaries\Win64\UnrealEditor-Cmd.exe"
 
 :: --- sanity checks ----------------------------------------------------------
+if "%ENGINE%"=="" (
+    echo [convex-ue] ERROR: no engine root. Set CONVEX_UE_ENGINE or pass -engine=^<path^>.
+    exit /b 1
+)
 if not exist "%ENGINE%\Engine" (
     echo [convex-ue] ERROR: Unreal Engine not found at "%ENGINE%".
     echo             Pass -engine=^<path^> or set CONVEX_UE_ENGINE.
@@ -111,7 +115,6 @@ if errorlevel 1 (
     exit /b 1
 )
 echo [convex-ue] Build succeeded.
-if /I "%COMMAND%"=="test" goto run_tests
 exit /b 0
 
 ::=============================================================================

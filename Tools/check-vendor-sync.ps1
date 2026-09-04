@@ -8,7 +8,7 @@
     Compares, by SHA-256:
       * ConvexCore/Public/convex-cpp/include/convex/*.h   vs  <repo>/include/convex/*.h
       * ConvexClient/Private/convex-cpp/src/**            vs  <repo>/src/**
-      * ConvexClient/Private/convex-cpp/third_party/nlohmann/json.hpp
+      * ConvexClient/Private/convex-cpp/third_party/nlohmann/**
     Reports files that differ, exist only vendored (stale), or exist only in
     the canonical repo (missing from the vendor copy).
 
@@ -16,7 +16,7 @@
     Path to the convex-cpp checkout. Defaults to the sibling repo.
 #>
 param(
-    [string]$SourceRepo = "F:\GitHub-Potionify\potionify-workspace\convex-cpp"
+    [string]$SourceRepo = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) "convex-cpp")
 )
 
 $ErrorActionPreference = "Stop"

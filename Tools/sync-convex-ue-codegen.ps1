@@ -23,7 +23,7 @@
     Path to the convex-ue-codegen checkout. Defaults to the sibling repo.
 #>
 param(
-    [string]$SourceRepo = "F:\GitHub-Potionify\potionify-workspace\convex-ue-codegen"
+    [string]$SourceRepo = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) "convex-ue-codegen")
 )
 
 $ErrorActionPreference = "Stop"
@@ -34,7 +34,7 @@ $EditorRoot = Join-Path $PluginRoot "Source\ConvexEditor"
 
 $SrcInclude    = Join-Path $SourceRepo "core\include\convex_codegen"
 $SrcSrc        = Join-Path $SourceRepo "core\src"
-$SrcThirdParty = Join-Path $SourceRepo "third_party\nlohmann\json.hpp"
+$SrcThirdParty = Join-Path $SourceRepo "third_party\nlohmann"
 
 $DstInclude    = Join-Path $EditorRoot "Private\convex-ue-codegen\include\convex_codegen"
 $DstSrc        = Join-Path $EditorRoot "Private\convex-ue-codegen\src"
@@ -43,7 +43,7 @@ $DstThirdParty = Join-Path $EditorRoot "Private\convex-ue-codegen\third_party\nl
 # --- Validate source ------------------------------------------------------
 if (-not (Test-Path $SrcInclude))    { throw "Core headers not found: $SrcInclude" }
 if (-not (Test-Path $SrcSrc))        { throw "Core sources not found: $SrcSrc" }
-if (-not (Test-Path $SrcThirdParty)) { throw "nlohmann/json.hpp not found: $SrcThirdParty" }
+if (-not (Test-Path $SrcThirdParty)) { throw "third_party/nlohmann not found: $SrcThirdParty" }
 
 Write-Host "Syncing convex-ue-codegen core from: $SourceRepo"
 
@@ -66,8 +66,8 @@ Copy-Item -Path (Join-Path $SrcInclude "*.h") -Destination $DstInclude -Force
 Write-Host "  Copying sources -> $DstSrc"
 Copy-Item -Path (Join-Path $SrcSrc "*.cpp") -Destination $DstSrc -Force
 
-Write-Host "  Copying nlohmann/json.hpp -> $DstThirdParty"
-Copy-Item -Path $SrcThirdParty -Destination $DstThirdParty -Force
+Write-Host "  Copying third_party/nlohmann -> $DstThirdParty"
+Copy-Item -Path (Join-Path $SrcThirdParty "*") -Destination $DstThirdParty -Force
 
 # --- Record provenance ----------------------------------------------------
 $commit = "unknown"
@@ -83,7 +83,7 @@ try {
 $stamp   = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
 $version = @(
     "convex-ue-codegen vendored sync (emission core only)",
-    "source: $SourceRepo",
+    "source: https://github.com/Potionify/convex-ue-codegen",
     "commit: $commit",
     "synced: $stamp"
 ) -join "`n"
