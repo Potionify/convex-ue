@@ -4,9 +4,81 @@
 // Typed AngelScript wrappers for the deployed Convex functions, for the
 // Hazelight UnrealEngine-Angelscript fork. Put this file under the project's
 // Script/ folder; it needs no build step and hot-reloads. Requires the Convex
-// plugin. Functions with optional arguments have two overloads: required
-// arguments only, and every argument. Named arguments work: Fn(Client,
-// Name = "hits", By = 2.0, OnResult = Handler).
+// plugin. Object shapes the functions declare are script structs, decoded and
+// encoded by the ConvexApi::Types namespace; a function with a declared
+// return takes a typed delegate. Functions with optional arguments have two
+// overloads: required arguments only, and every argument. Named arguments
+// work: Fn(Client, Name = "hits", By = 2.0, OnResult = Handler).
+
+/// object{ cursor: union<string | null>, endCursor?: union<string | null>, id?: number, maximumBytesRead?: number, maximumRowsRead?: number, numItems: number }
+struct FConvexApiMessagesListPaginatedPaginationOpts
+{
+	FConvexValue Cursor;
+	FConvexValue EndCursor;
+	bool bHasEndCursor = false; // EndCursor was present
+	float Id = 0.0;
+	bool bHasId = false; // Id was present
+	float MaximumBytesRead = 0.0;
+	bool bHasMaximumBytesRead = false; // MaximumBytesRead was present
+	float MaximumRowsRead = 0.0;
+	bool bHasMaximumRowsRead = false; // MaximumRowsRead was present
+	float NumItems = 0.0;
+};
+
+namespace ConvexApi::Types
+{
+	FConvexApiMessagesListPaginatedPaginationOpts DecodeMessagesListPaginatedPaginationOpts(FConvexValue Value)
+	{
+		FConvexApiMessagesListPaginatedPaginationOpts Out;
+		Out.Cursor = Value.Get("cursor");
+		if (Value.HasField("endCursor"))
+		{
+			Out.bHasEndCursor = true;
+			Out.EndCursor = Value.Get("endCursor");
+		}
+		if (Value.HasField("id"))
+		{
+			Out.bHasId = true;
+			Out.Id = Value.Get("id").AsFloat();
+		}
+		if (Value.HasField("maximumBytesRead"))
+		{
+			Out.bHasMaximumBytesRead = true;
+			Out.MaximumBytesRead = Value.Get("maximumBytesRead").AsFloat();
+		}
+		if (Value.HasField("maximumRowsRead"))
+		{
+			Out.bHasMaximumRowsRead = true;
+			Out.MaximumRowsRead = Value.Get("maximumRowsRead").AsFloat();
+		}
+		Out.NumItems = Value.Get("numItems").AsFloat();
+		return Out;
+	}
+
+	FConvexValue Encode(FConvexApiMessagesListPaginatedPaginationOpts In)
+	{
+		TMap<FString, FConvexValue> Fields;
+		Fields.Add("cursor", In.Cursor);
+		if (In.bHasEndCursor)
+		{
+			Fields.Add("endCursor", In.EndCursor);
+		}
+		if (In.bHasId)
+		{
+			Fields.Add("id", Convex::MakeConvexFloat(In.Id));
+		}
+		if (In.bHasMaximumBytesRead)
+		{
+			Fields.Add("maximumBytesRead", Convex::MakeConvexFloat(In.MaximumBytesRead));
+		}
+		if (In.bHasMaximumRowsRead)
+		{
+			Fields.Add("maximumRowsRead", Convex::MakeConvexFloat(In.MaximumRowsRead));
+		}
+		Fields.Add("numItems", Convex::MakeConvexFloat(In.NumItems));
+		return Convex::MakeConvexObject(Fields);
+	}
+}
 
 namespace ConvexApi::Actions
 {
@@ -179,19 +251,19 @@ namespace ConvexApi::Messages
 	/// messages.js:listPaginated (Query)
 	/// args:    object{ channel: string, paginationOpts: object{ cursor: union<string | null>, endCursor?: union<string | null>, id?: number, maximumBytesRead?: number, maximumRowsRead?: number, numItems: number } }
 	/// returns: any
-	void ListPaginated(UConvexClient Client, FString Channel, FConvexValue PaginationOpts, FConvexResultDelegate OnResult)
+	void ListPaginated(UConvexClient Client, FString Channel, FConvexApiMessagesListPaginatedPaginationOpts PaginationOpts, FConvexResultDelegate OnResult)
 	{
 		TMap<FString, FConvexValue> Args;
 		Args.Add("channel", Convex::MakeConvexString(Channel));
-		Args.Add("paginationOpts", PaginationOpts);
+		Args.Add("paginationOpts", ConvexApi::Types::Encode(PaginationOpts));
 		Client.Query("messages:listPaginated", Args, OnResult);
 	}
 
-	UConvexSubscription WatchListPaginated(UConvexClient Client, FString Channel, FConvexValue PaginationOpts, FConvexResultDelegate OnUpdate)
+	UConvexSubscription WatchListPaginated(UConvexClient Client, FString Channel, FConvexApiMessagesListPaginatedPaginationOpts PaginationOpts, FConvexResultDelegate OnUpdate)
 	{
 		TMap<FString, FConvexValue> Args;
 		Args.Add("channel", Convex::MakeConvexString(Channel));
-		Args.Add("paginationOpts", PaginationOpts);
+		Args.Add("paginationOpts", ConvexApi::Types::Encode(PaginationOpts));
 		return Client.Subscribe("messages:listPaginated", Args, OnUpdate);
 	}
 
@@ -207,19 +279,19 @@ namespace ConvexApi::Messages
 	/// messages.js:listPaginatedDesc (Query)
 	/// args:    object{ channel: string, paginationOpts: object{ cursor: union<string | null>, endCursor?: union<string | null>, id?: number, maximumBytesRead?: number, maximumRowsRead?: number, numItems: number } }
 	/// returns: any
-	void ListPaginatedDesc(UConvexClient Client, FString Channel, FConvexValue PaginationOpts, FConvexResultDelegate OnResult)
+	void ListPaginatedDesc(UConvexClient Client, FString Channel, FConvexApiMessagesListPaginatedPaginationOpts PaginationOpts, FConvexResultDelegate OnResult)
 	{
 		TMap<FString, FConvexValue> Args;
 		Args.Add("channel", Convex::MakeConvexString(Channel));
-		Args.Add("paginationOpts", PaginationOpts);
+		Args.Add("paginationOpts", ConvexApi::Types::Encode(PaginationOpts));
 		Client.Query("messages:listPaginatedDesc", Args, OnResult);
 	}
 
-	UConvexSubscription WatchListPaginatedDesc(UConvexClient Client, FString Channel, FConvexValue PaginationOpts, FConvexResultDelegate OnUpdate)
+	UConvexSubscription WatchListPaginatedDesc(UConvexClient Client, FString Channel, FConvexApiMessagesListPaginatedPaginationOpts PaginationOpts, FConvexResultDelegate OnUpdate)
 	{
 		TMap<FString, FConvexValue> Args;
 		Args.Add("channel", Convex::MakeConvexString(Channel));
-		Args.Add("paginationOpts", PaginationOpts);
+		Args.Add("paginationOpts", ConvexApi::Types::Encode(PaginationOpts));
 		return Client.Subscribe("messages:listPaginatedDesc", Args, OnUpdate);
 	}
 
