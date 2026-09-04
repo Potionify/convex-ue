@@ -200,10 +200,18 @@ FConvexValue UConvexScriptMixins::Get(const FConvexValue& Value, const FString& 
 FConvexValue UConvexScriptMixins::Field(const FConvexValue& Value, const FString& Path)
 {
 	TArray<FString> Segments;
-	Path.ParseIntoArray(Segments, TEXT("."), /*InCullEmpty=*/true);
+	Path.ParseIntoArray(Segments, TEXT("."), /*InCullEmpty=*/false);
+	if (Segments.IsEmpty())
+	{
+		return FConvexValue::Null();
+	}
 	FConvexValue Current = Value;
 	for (const FString& Segment : Segments)
 	{
+		if (Segment.IsEmpty())
+		{
+			return FConvexValue::Null();
+		}
 		TMap<FString, FConvexValue> Fields;
 		if (Current.TryGetObject(Fields))
 		{

@@ -221,6 +221,40 @@ bool FConvexOfflineOneShotRootsTarget::RunTest(const FString& Parameters)
 
 // ---------------------------------------------------------------------------
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FConvexOfflineTargetAliveDuringCallback,
+	"Convex.Offline.OneShotTargetAliveDuringCallback",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext |
+		EAutomationTestFlags::ProductFilter)
+
+bool FConvexOfflineTargetAliveDuringCallback::RunTest(const FString& Parameters)
+{
+	UConvexClient* Client = NewObject<UConvexClient>();
+	Client->AddToRoot();
+	Client->Initialize(TEXT("http://127.0.0.1:65001"));
+	if (!TestTrue(TEXT("initialized"), Client->IsInitialized())) return true;
+
+	TWeakObjectPtr<UConvexTestProbe> Probe = NewObject<UConvexTestProbe>();
+	FConvexResultDelegate OnResult;
+	OnResult.BindDynamic(Probe.Get(), &UConvexTestProbe::OnResultCollect);
+	Client->HttpQuery(TEXT("values:kitchenSink"), {}, OnResult);
+
+	// Shutdown fires the callback, which collects garbage mid-flight. The
+	// target must survive that collection and finish its own callback.
+	Client->Shutdown();
+	TestTrue(TEXT("target survived a GC inside its callback"), Probe.IsValid());
+	if (Probe.IsValid())
+	{
+		TestEqual(TEXT("callback ran to completion"), Probe->Calls, 1);
+	}
+	CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+	TestFalse(TEXT("target is collectable afterwards"), Probe.IsValid());
+
+	Client->RemoveFromRoot();
+	return true;
+}
+
+// ---------------------------------------------------------------------------
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FConvexOfflineSubscriptionListener, "Convex.Offline.SubscriptionAttachListener",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext |
 		EAutomationTestFlags::ProductFilter)

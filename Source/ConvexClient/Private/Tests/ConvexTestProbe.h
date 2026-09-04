@@ -19,5 +19,14 @@ public:
 	UFUNCTION()
 	void OnResult(FConvexResult Result) { ++Calls; }
 
+	/// Collects garbage from inside the callback, then touches the object:
+	/// the client must still be holding it at that point.
+	UFUNCTION()
+	void OnResultCollect(FConvexResult Result)
+	{
+		CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+		++Calls;
+	}
+
 	int32 Calls = 0;
 };

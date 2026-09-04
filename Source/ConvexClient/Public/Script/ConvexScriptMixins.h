@@ -141,7 +141,8 @@ public:
 
 	/// The field at a dotted path such as "player.stats.hp". Each segment
 	/// names an object field; a segment that is a whole number indexes an
-	/// array. Convex null when any step is missing.
+	/// array. Convex null when any step is missing, and for an empty path or
+	/// an empty segment ("a..b").
 	UFUNCTION(meta = (ScriptCallable))
 	static FConvexValue Field(const FConvexValue& Value, const FString& Path);
 

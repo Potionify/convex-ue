@@ -188,6 +188,8 @@ void Test_ConvexValueMixins(FUnitTest& T)
     T.AssertEquals(Value.Get("tags").At(1).AsString(), "b");
     T.AssertEquals(Value.Field("tags.0").AsString(), "a");
     T.AssertTrue(Value.Field("tags.5").IsNull());
+    T.AssertTrue(Value.Field("").IsNull());
+    T.AssertTrue(Value.Field("stats..hp").IsNull());
     T.AssertTrue(Value.HasField("stats"));
     T.AssertFalse(Value.HasField("stats.hp"));
     T.AssertEquals(Value.Keys().Num(), 4);

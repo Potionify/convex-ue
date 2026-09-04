@@ -664,7 +664,7 @@ bool FConvexVendoredCodegenTest::RunTest(const FString&)
 	{
 		TestTrue(TEXT("script namespace"), Script->Contains(TEXT("namespace ConvexApi::Counters")));
 		TestTrue(TEXT("script calls the ScriptCallable client method"),
-			Script->Contains(TEXT("Client.Mutation(\"counters:increment\", Args, OnResult);")));
+			Script->Contains(TEXT("Client.Mutation(\"counters:increment\", _Args, OnResult);")));
 		TestTrue(TEXT("optional arg becomes an all-arguments overload"),
 			Script->Contains(TEXT("float By, FConvexResultDelegate OnResult")));
 	}

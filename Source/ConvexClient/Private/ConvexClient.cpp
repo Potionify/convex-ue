@@ -97,8 +97,23 @@ struct FConvexRefreshableAuth
 {
 	FCriticalSection Lock;
 	FString Token;
+	/// Cleared when the client leaves refresh-event mode or shuts down, so a
+	/// request the worker queued just before that is dropped instead of
+	/// asking game code for a token it no longer wants to set.
+	bool bActive = true;
 	TWeakObjectPtr<UConvexClient> Client;
 };
+
+/// Leave refresh-event mode: the queued and future requests stop firing.
+void DeactivateRefreshableAuth(TSharedPtr<FConvexRefreshableAuth, ESPMode::ThreadSafe>& State)
+{
+	if (State)
+	{
+		FScopeLock ScopeLock(&State->Lock);
+		State->bActive = false;
+	}
+	State.Reset();
+}
 
 struct FConvexClientImpl
 {
@@ -161,10 +176,16 @@ namespace
 				FScopeLock ScopeLock(&State->Lock);
 				Token = State->Token;
 			}
-			const TWeakObjectPtr<UConvexClient> WeakClient = State->Client;
-			AsyncTask(ENamedThreads::GameThread, [WeakClient]
+			AsyncTask(ENamedThreads::GameThread, [State]
 			{
-				if (UConvexClient* Client = WeakClient.Get())
+				{
+					FScopeLock ScopeLock(&State->Lock);
+					if (!State->bActive)
+					{
+						return;
+					}
+				}
+				if (UConvexClient* Client = State->Client.Get())
 				{
 					Client->OnAuthRefreshRequested.Broadcast();
 					Client->OnAuthRefreshRequestedNative.Broadcast();
@@ -349,6 +370,10 @@ void UConvexClient::Shutdown()
 
 	ActiveSubscriptions.Reset();
 	PendingCallbackTargets.Reset();
+	if (Impl)
+	{
+		DeactivateRefreshableAuth(Impl->RefreshableAuth);
+	}
 }
 
 void UConvexClient::BeginDestroy()
@@ -577,13 +602,15 @@ FConvexResultNative UConvexClient::RootUntilFired(FConvexResultDelegate Delegate
 		PendingCallbackTargets.Add(Target);
 	}
 	TWeakObjectPtr<UConvexClient> WeakThis(this);
+	// The target stays rooted while its UFUNCTION runs: a callback that
+	// triggers garbage collection must not collect the object executing it.
 	return [WeakThis, Delegate, Target](const FConvexResult& Result)
 	{
+		Delegate.ExecuteIfBound(Result);
 		if (UConvexClient* Self = WeakThis.Get())
 		{
 			Self->ReleaseCallbackTarget(Target);
 		}
-		Delegate.ExecuteIfBound(Result);
 	};
 }
 
@@ -597,11 +624,11 @@ FConvexDownloadNative UConvexClient::RootUntilFired(FConvexDownloadDelegate Dele
 	TWeakObjectPtr<UConvexClient> WeakThis(this);
 	return [WeakThis, Delegate, Target](bool bSuccess, const TArray<uint8>& Data)
 	{
+		Delegate.ExecuteIfBound(bSuccess, Data);
 		if (UConvexClient* Self = WeakThis.Get())
 		{
 			Self->ReleaseCallbackTarget(Target);
 		}
-		Delegate.ExecuteIfBound(bSuccess, Data);
 	};
 }
 
@@ -845,7 +872,7 @@ void UConvexClient::SetUserAuthWithRefresh(const FString& Jwt, FConvexAuthRefres
 {
 	try
 	{
-		if (Impl) { Impl->RefreshableAuth.Reset(); }
+		if (Impl) { DeactivateRefreshableAuth(Impl->RefreshableAuth); }
 		const convex::auth_token Token = convex::auth_token::user(FStringToUtf8(Jwt));
 		convex::auth_fetcher Fetcher;
 		if (RefreshFetcher)
@@ -876,7 +903,7 @@ void UConvexClient::SetAdminAuth(const FString& Key)
 {
 	try
 	{
-		if (Impl) { Impl->RefreshableAuth.Reset(); }
+		if (Impl) { DeactivateRefreshableAuth(Impl->RefreshableAuth); }
 		const convex::auth_token Token = convex::auth_token::admin(FStringToUtf8(Key));
 		if (Impl && Impl->Client) { Impl->Client->set_auth(Token); }
 		if (Impl && Impl->HttpClient) { Impl->HttpClient->set_auth(Token); }
@@ -891,7 +918,7 @@ void UConvexClient::ClearAuth()
 {
 	try
 	{
-		if (Impl) { Impl->RefreshableAuth.Reset(); }
+		if (Impl) { DeactivateRefreshableAuth(Impl->RefreshableAuth); }
 		const convex::auth_token Token = convex::auth_token::none();
 		if (Impl && Impl->Client) { Impl->Client->set_auth(Token); }
 		if (Impl && Impl->HttpClient) { Impl->HttpClient->set_auth(Token); }

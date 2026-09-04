@@ -87,9 +87,9 @@ namespace ConvexApi::Actions
 	/// returns: any
 	void EchoAction(UConvexClient Client, FConvexValue X, FConvexResultDelegate OnResult)
 	{
-		TMap<FString, FConvexValue> Args;
-		Args.Add("x", X);
-		Client.Action("actions:echoAction", Args, OnResult);
+		TMap<FString, FConvexValue> _Args;
+		_Args.Add("x", X);
+		Client.Action("actions:echoAction", _Args, OnResult);
 	}
 
 	/// actions.js:now (Action)
@@ -97,8 +97,8 @@ namespace ConvexApi::Actions
 	/// returns: any
 	void Now(UConvexClient Client, FConvexResultDelegate OnResult)
 	{
-		TMap<FString, FConvexValue> Args;
-		Client.Action("actions:now", Args, OnResult);
+		TMap<FString, FConvexValue> _Args;
+		Client.Action("actions:now", _Args, OnResult);
 	}
 }
 
@@ -109,16 +109,16 @@ namespace ConvexApi::Counters
 	/// returns: any
 	void Get(UConvexClient Client, FString Name, FConvexResultDelegate OnResult)
 	{
-		TMap<FString, FConvexValue> Args;
-		Args.Add("name", Convex::MakeConvexString(Name));
-		Client.Query("counters:get", Args, OnResult);
+		TMap<FString, FConvexValue> _Args;
+		_Args.Add("name", Convex::MakeConvexString(Name));
+		Client.Query("counters:get", _Args, OnResult);
 	}
 
 	UConvexSubscription WatchGet(UConvexClient Client, FString Name, FConvexResultDelegate OnUpdate)
 	{
-		TMap<FString, FConvexValue> Args;
-		Args.Add("name", Convex::MakeConvexString(Name));
-		return Client.Subscribe("counters:get", Args, OnUpdate);
+		TMap<FString, FConvexValue> _Args;
+		_Args.Add("name", Convex::MakeConvexString(Name));
+		return Client.Subscribe("counters:get", _Args, OnUpdate);
 	}
 
 	/// counters.js:increment (Mutation)
@@ -126,18 +126,18 @@ namespace ConvexApi::Counters
 	/// returns: any
 	void Increment(UConvexClient Client, FString Name, FConvexResultDelegate OnResult)
 	{
-		TMap<FString, FConvexValue> Args;
-		Args.Add("name", Convex::MakeConvexString(Name));
-		Client.Mutation("counters:increment", Args, OnResult);
+		TMap<FString, FConvexValue> _Args;
+		_Args.Add("name", Convex::MakeConvexString(Name));
+		Client.Mutation("counters:increment", _Args, OnResult);
 	}
 
 	/// All arguments, including the optional ones.
 	void Increment(UConvexClient Client, FString Name, float By, FConvexResultDelegate OnResult)
 	{
-		TMap<FString, FConvexValue> Args;
-		Args.Add("name", Convex::MakeConvexString(Name));
-		Args.Add("by", Convex::MakeConvexFloat(By));
-		Client.Mutation("counters:increment", Args, OnResult);
+		TMap<FString, FConvexValue> _Args;
+		_Args.Add("name", Convex::MakeConvexString(Name));
+		_Args.Add("by", Convex::MakeConvexFloat(By));
+		Client.Mutation("counters:increment", _Args, OnResult);
 	}
 }
 
@@ -148,14 +148,14 @@ namespace ConvexApi::Errors
 	/// returns: any
 	void ThrowConvexError(UConvexClient Client, FConvexResultDelegate OnResult)
 	{
-		TMap<FString, FConvexValue> Args;
-		Client.Query("errors:throwConvexError", Args, OnResult);
+		TMap<FString, FConvexValue> _Args;
+		Client.Query("errors:throwConvexError", _Args, OnResult);
 	}
 
 	UConvexSubscription WatchThrowConvexError(UConvexClient Client, FConvexResultDelegate OnUpdate)
 	{
-		TMap<FString, FConvexValue> Args;
-		return Client.Subscribe("errors:throwConvexError", Args, OnUpdate);
+		TMap<FString, FConvexValue> _Args;
+		return Client.Subscribe("errors:throwConvexError", _Args, OnUpdate);
 	}
 
 	/// errors.js:throwPlainError (Query)
@@ -163,14 +163,14 @@ namespace ConvexApi::Errors
 	/// returns: any
 	void ThrowPlainError(UConvexClient Client, FConvexResultDelegate OnResult)
 	{
-		TMap<FString, FConvexValue> Args;
-		Client.Query("errors:throwPlainError", Args, OnResult);
+		TMap<FString, FConvexValue> _Args;
+		Client.Query("errors:throwPlainError", _Args, OnResult);
 	}
 
 	UConvexSubscription WatchThrowPlainError(UConvexClient Client, FConvexResultDelegate OnUpdate)
 	{
-		TMap<FString, FConvexValue> Args;
-		return Client.Subscribe("errors:throwPlainError", Args, OnUpdate);
+		TMap<FString, FConvexValue> _Args;
+		return Client.Subscribe("errors:throwPlainError", _Args, OnUpdate);
 	}
 }
 
@@ -181,8 +181,8 @@ namespace ConvexApi::Files
 	/// returns: any
 	void GenerateUploadUrl(UConvexClient Client, FConvexResultDelegate OnResult)
 	{
-		TMap<FString, FConvexValue> Args;
-		Client.Mutation("files:generateUploadUrl", Args, OnResult);
+		TMap<FString, FConvexValue> _Args;
+		Client.Mutation("files:generateUploadUrl", _Args, OnResult);
 	}
 
 	/// files.js:getMetadata (Query)
@@ -190,16 +190,16 @@ namespace ConvexApi::Files
 	/// returns: any
 	void GetMetadata(UConvexClient Client, FString StorageId, FConvexResultDelegate OnResult)
 	{
-		TMap<FString, FConvexValue> Args;
-		Args.Add("storageId", Convex::MakeConvexString(StorageId));
-		Client.Query("files:getMetadata", Args, OnResult);
+		TMap<FString, FConvexValue> _Args;
+		_Args.Add("storageId", Convex::MakeConvexString(StorageId));
+		Client.Query("files:getMetadata", _Args, OnResult);
 	}
 
 	UConvexSubscription WatchGetMetadata(UConvexClient Client, FString StorageId, FConvexResultDelegate OnUpdate)
 	{
-		TMap<FString, FConvexValue> Args;
-		Args.Add("storageId", Convex::MakeConvexString(StorageId));
-		return Client.Subscribe("files:getMetadata", Args, OnUpdate);
+		TMap<FString, FConvexValue> _Args;
+		_Args.Add("storageId", Convex::MakeConvexString(StorageId));
+		return Client.Subscribe("files:getMetadata", _Args, OnUpdate);
 	}
 
 	/// files.js:getUrl (Query)
@@ -207,16 +207,16 @@ namespace ConvexApi::Files
 	/// returns: any
 	void GetUrl(UConvexClient Client, FString StorageId, FConvexResultDelegate OnResult)
 	{
-		TMap<FString, FConvexValue> Args;
-		Args.Add("storageId", Convex::MakeConvexString(StorageId));
-		Client.Query("files:getUrl", Args, OnResult);
+		TMap<FString, FConvexValue> _Args;
+		_Args.Add("storageId", Convex::MakeConvexString(StorageId));
+		Client.Query("files:getUrl", _Args, OnResult);
 	}
 
 	UConvexSubscription WatchGetUrl(UConvexClient Client, FString StorageId, FConvexResultDelegate OnUpdate)
 	{
-		TMap<FString, FConvexValue> Args;
-		Args.Add("storageId", Convex::MakeConvexString(StorageId));
-		return Client.Subscribe("files:getUrl", Args, OnUpdate);
+		TMap<FString, FConvexValue> _Args;
+		_Args.Add("storageId", Convex::MakeConvexString(StorageId));
+		return Client.Subscribe("files:getUrl", _Args, OnUpdate);
 	}
 }
 
@@ -227,8 +227,8 @@ namespace ConvexApi::Messages
 	/// returns: any
 	void ClearAll(UConvexClient Client, FConvexResultDelegate OnResult)
 	{
-		TMap<FString, FConvexValue> Args;
-		Client.Mutation("messages:clearAll", Args, OnResult);
+		TMap<FString, FConvexValue> _Args;
+		Client.Mutation("messages:clearAll", _Args, OnResult);
 	}
 
 	/// messages.js:list (Query)
@@ -236,16 +236,16 @@ namespace ConvexApi::Messages
 	/// returns: any
 	void List(UConvexClient Client, FString Channel, FConvexResultDelegate OnResult)
 	{
-		TMap<FString, FConvexValue> Args;
-		Args.Add("channel", Convex::MakeConvexString(Channel));
-		Client.Query("messages:list", Args, OnResult);
+		TMap<FString, FConvexValue> _Args;
+		_Args.Add("channel", Convex::MakeConvexString(Channel));
+		Client.Query("messages:list", _Args, OnResult);
 	}
 
 	UConvexSubscription WatchList(UConvexClient Client, FString Channel, FConvexResultDelegate OnUpdate)
 	{
-		TMap<FString, FConvexValue> Args;
-		Args.Add("channel", Convex::MakeConvexString(Channel));
-		return Client.Subscribe("messages:list", Args, OnUpdate);
+		TMap<FString, FConvexValue> _Args;
+		_Args.Add("channel", Convex::MakeConvexString(Channel));
+		return Client.Subscribe("messages:list", _Args, OnUpdate);
 	}
 
 	/// messages.js:listPaginated (Query)
@@ -253,27 +253,27 @@ namespace ConvexApi::Messages
 	/// returns: any
 	void ListPaginated(UConvexClient Client, FString Channel, FConvexApiMessagesListPaginatedPaginationOpts PaginationOpts, FConvexResultDelegate OnResult)
 	{
-		TMap<FString, FConvexValue> Args;
-		Args.Add("channel", Convex::MakeConvexString(Channel));
-		Args.Add("paginationOpts", ConvexApi::Types::Encode(PaginationOpts));
-		Client.Query("messages:listPaginated", Args, OnResult);
+		TMap<FString, FConvexValue> _Args;
+		_Args.Add("channel", Convex::MakeConvexString(Channel));
+		_Args.Add("paginationOpts", ConvexApi::Types::Encode(PaginationOpts));
+		Client.Query("messages:listPaginated", _Args, OnResult);
 	}
 
 	UConvexSubscription WatchListPaginated(UConvexClient Client, FString Channel, FConvexApiMessagesListPaginatedPaginationOpts PaginationOpts, FConvexResultDelegate OnUpdate)
 	{
-		TMap<FString, FConvexValue> Args;
-		Args.Add("channel", Convex::MakeConvexString(Channel));
-		Args.Add("paginationOpts", ConvexApi::Types::Encode(PaginationOpts));
-		return Client.Subscribe("messages:listPaginated", Args, OnUpdate);
+		TMap<FString, FConvexValue> _Args;
+		_Args.Add("channel", Convex::MakeConvexString(Channel));
+		_Args.Add("paginationOpts", ConvexApi::Types::Encode(PaginationOpts));
+		return Client.Subscribe("messages:listPaginated", _Args, OnUpdate);
 	}
 
 	/// Subscribes messages:listPaginated as a growing live list (the usePaginatedQuery
 	/// pattern); paginationOpts is injected by the client.
 	UConvexPaginatedSubscription WatchListPaginatedPaginated(UConvexClient Client, FString Channel, int InitialNumItems, FConvexPaginatedSnapshotDelegate OnUpdate)
 	{
-		TMap<FString, FConvexValue> Args;
-		Args.Add("channel", Convex::MakeConvexString(Channel));
-		return Client.SubscribePaginated("messages:listPaginated", Args, InitialNumItems, OnUpdate);
+		TMap<FString, FConvexValue> _Args;
+		_Args.Add("channel", Convex::MakeConvexString(Channel));
+		return Client.SubscribePaginated("messages:listPaginated", _Args, InitialNumItems, OnUpdate);
 	}
 
 	/// messages.js:listPaginatedDesc (Query)
@@ -281,27 +281,27 @@ namespace ConvexApi::Messages
 	/// returns: any
 	void ListPaginatedDesc(UConvexClient Client, FString Channel, FConvexApiMessagesListPaginatedPaginationOpts PaginationOpts, FConvexResultDelegate OnResult)
 	{
-		TMap<FString, FConvexValue> Args;
-		Args.Add("channel", Convex::MakeConvexString(Channel));
-		Args.Add("paginationOpts", ConvexApi::Types::Encode(PaginationOpts));
-		Client.Query("messages:listPaginatedDesc", Args, OnResult);
+		TMap<FString, FConvexValue> _Args;
+		_Args.Add("channel", Convex::MakeConvexString(Channel));
+		_Args.Add("paginationOpts", ConvexApi::Types::Encode(PaginationOpts));
+		Client.Query("messages:listPaginatedDesc", _Args, OnResult);
 	}
 
 	UConvexSubscription WatchListPaginatedDesc(UConvexClient Client, FString Channel, FConvexApiMessagesListPaginatedPaginationOpts PaginationOpts, FConvexResultDelegate OnUpdate)
 	{
-		TMap<FString, FConvexValue> Args;
-		Args.Add("channel", Convex::MakeConvexString(Channel));
-		Args.Add("paginationOpts", ConvexApi::Types::Encode(PaginationOpts));
-		return Client.Subscribe("messages:listPaginatedDesc", Args, OnUpdate);
+		TMap<FString, FConvexValue> _Args;
+		_Args.Add("channel", Convex::MakeConvexString(Channel));
+		_Args.Add("paginationOpts", ConvexApi::Types::Encode(PaginationOpts));
+		return Client.Subscribe("messages:listPaginatedDesc", _Args, OnUpdate);
 	}
 
 	/// Subscribes messages:listPaginatedDesc as a growing live list (the usePaginatedQuery
 	/// pattern); paginationOpts is injected by the client.
 	UConvexPaginatedSubscription WatchListPaginatedDescPaginated(UConvexClient Client, FString Channel, int InitialNumItems, FConvexPaginatedSnapshotDelegate OnUpdate)
 	{
-		TMap<FString, FConvexValue> Args;
-		Args.Add("channel", Convex::MakeConvexString(Channel));
-		return Client.SubscribePaginated("messages:listPaginatedDesc", Args, InitialNumItems, OnUpdate);
+		TMap<FString, FConvexValue> _Args;
+		_Args.Add("channel", Convex::MakeConvexString(Channel));
+		return Client.SubscribePaginated("messages:listPaginatedDesc", _Args, InitialNumItems, OnUpdate);
 	}
 
 	/// messages.js:send (Mutation)
@@ -309,11 +309,11 @@ namespace ConvexApi::Messages
 	/// returns: any
 	void Send(UConvexClient Client, FString Author, FString Body, FString Channel, FConvexResultDelegate OnResult)
 	{
-		TMap<FString, FConvexValue> Args;
-		Args.Add("author", Convex::MakeConvexString(Author));
-		Args.Add("body", Convex::MakeConvexString(Body));
-		Args.Add("channel", Convex::MakeConvexString(Channel));
-		Client.Mutation("messages:send", Args, OnResult);
+		TMap<FString, FConvexValue> _Args;
+		_Args.Add("author", Convex::MakeConvexString(Author));
+		_Args.Add("body", Convex::MakeConvexString(Body));
+		_Args.Add("channel", Convex::MakeConvexString(Channel));
+		Client.Mutation("messages:send", _Args, OnResult);
 	}
 }
 
@@ -324,9 +324,9 @@ namespace ConvexApi::Values
 	/// returns: any
 	void EchoMutation(UConvexClient Client, FConvexValue X, FConvexResultDelegate OnResult)
 	{
-		TMap<FString, FConvexValue> Args;
-		Args.Add("x", X);
-		Client.Mutation("values:echoMutation", Args, OnResult);
+		TMap<FString, FConvexValue> _Args;
+		_Args.Add("x", X);
+		Client.Mutation("values:echoMutation", _Args, OnResult);
 	}
 
 	/// values.js:echoQuery (Query)
@@ -334,16 +334,16 @@ namespace ConvexApi::Values
 	/// returns: any
 	void EchoQuery(UConvexClient Client, FConvexValue X, FConvexResultDelegate OnResult)
 	{
-		TMap<FString, FConvexValue> Args;
-		Args.Add("x", X);
-		Client.Query("values:echoQuery", Args, OnResult);
+		TMap<FString, FConvexValue> _Args;
+		_Args.Add("x", X);
+		Client.Query("values:echoQuery", _Args, OnResult);
 	}
 
 	UConvexSubscription WatchEchoQuery(UConvexClient Client, FConvexValue X, FConvexResultDelegate OnUpdate)
 	{
-		TMap<FString, FConvexValue> Args;
-		Args.Add("x", X);
-		return Client.Subscribe("values:echoQuery", Args, OnUpdate);
+		TMap<FString, FConvexValue> _Args;
+		_Args.Add("x", X);
+		return Client.Subscribe("values:echoQuery", _Args, OnUpdate);
 	}
 
 	/// values.js:kitchenSink (Query)
@@ -351,14 +351,14 @@ namespace ConvexApi::Values
 	/// returns: any
 	void KitchenSink(UConvexClient Client, FConvexResultDelegate OnResult)
 	{
-		TMap<FString, FConvexValue> Args;
-		Client.Query("values:kitchenSink", Args, OnResult);
+		TMap<FString, FConvexValue> _Args;
+		Client.Query("values:kitchenSink", _Args, OnResult);
 	}
 
 	UConvexSubscription WatchKitchenSink(UConvexClient Client, FConvexResultDelegate OnUpdate)
 	{
-		TMap<FString, FConvexValue> Args;
-		return Client.Subscribe("values:kitchenSink", Args, OnUpdate);
+		TMap<FString, FConvexValue> _Args;
+		return Client.Subscribe("values:kitchenSink", _Args, OnUpdate);
 	}
 }
 

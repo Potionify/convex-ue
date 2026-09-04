@@ -1,4 +1,4 @@
 convex-ue-codegen vendored sync (emission core only)
 source: https://github.com/Potionify/convex-ue-codegen
-commit: 7dd2bc8629ee7b5ed2cff2867009a1725be4b6c7
-synced: 2026-09-04 12:44:40
+commit: 283f26c8dd1522df042785ca3f923fa38f91b309
+synced: 2026-09-04 13:20:06
