@@ -188,7 +188,9 @@ ways to generate, all producing byte-identical output:
   `ConvexCodegen` commandlet (`UnrealEditor-Cmd -run=ConvexCodegen
   -Out=<dir> ...`), or the standalone CLI when a convex-ue-codegen build is
   available, which skips booting headless UE.
-- The standalone repo's CLI and web app, for CI and non-UE workflows.
+- The standalone repo's CLI, or the web app at
+  [ue-codegen.potionify.com](https://ue-codegen.potionify.com), for CI and
+  non-UE workflows.
 
 Output is `ConvexApi.h/.cpp` (typed native wrappers, `TOptional<>` for
 optional args) plus `ConvexApiBP.h/.cpp` (one Blueprint node per function
