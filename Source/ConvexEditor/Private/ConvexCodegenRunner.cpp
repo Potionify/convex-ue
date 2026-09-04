@@ -31,6 +31,7 @@ TOptional<FString> Generate(const FString& SpecJson, const FOptions& Options,
 	{
 		CoreOptions.emit_module = TCHAR_TO_UTF8(*Options.EmitModule);
 	}
+	CoreOptions.emit_script = Options.bEmitScript;
 
 	const FTCHARToUTF8 SpecUtf8(*SpecJson);
 	try
@@ -84,15 +85,27 @@ void FetchApiSpec(const FString& DeploymentUrl, const FString& AdminKey,
 	Request->ProcessRequest();
 }
 
-TOptional<FString> WriteFiles(const FString& OutDir, const TMap<FString, FString>& Files)
+bool IsScriptFile(const FString& FileName)
+{
+	return FileName.EndsWith(TEXT(".as"));
+}
+
+TOptional<FString> WriteFiles(const FString& OutDir, const TMap<FString, FString>& Files,
+	const FString& ScriptOutDir)
 {
 	if (!IFileManager::Get().MakeDirectory(*OutDir, /*Tree=*/true))
 	{
 		return FString::Printf(TEXT("Could not create output directory '%s'."), *OutDir);
 	}
+	if (!ScriptOutDir.IsEmpty() && !IFileManager::Get().MakeDirectory(*ScriptOutDir, /*Tree=*/true))
+	{
+		return FString::Printf(TEXT("Could not create script output directory '%s'."),
+			*ScriptOutDir);
+	}
 	for (const TPair<FString, FString>& File : Files)
 	{
-		const FString Path = OutDir / File.Key;
+		const bool bScript = IsScriptFile(File.Key) && !ScriptOutDir.IsEmpty();
+		const FString Path = (bScript ? ScriptOutDir : OutDir) / File.Key;
 		if (!FFileHelper::SaveStringToFile(File.Value, *Path,
 				FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
 		{

@@ -8,12 +8,23 @@ setlocal EnableDelayedExpansion
 ::   convex-ue-build.bat package         Package a redistributable plugin into
 ::                                       Dist\Convex (RunUAT BuildPlugin).
 ::   convex-ue-build.bat test            Build, then run the automation tests.
+::   convex-ue-build.bat angelscript     Build a copy against the Hazelight
+::                                       UnrealEngine-Angelscript fork and run
+::                                       the Example/Script unit tests there.
 ::   convex-ue-build.bat clean           Delete Binaries/Intermediate.
 ::
 :: Options (any order, after the command):
 ::   -engine=<path>   UE root (default: %CONVEX_UE_ENGINE% or F:\UE5\UE_5.8)
 ::   -config=<cfg>    Build configuration (default: Development)
 ::   -out=<path>      Package output dir (default: <repo>\Dist\Convex)
+::   -work=<path>     angelscript only: where the fork build copy lives
+::                    (default: %CONVEX_UEAS_WORK% or %LOCALAPPDATA%\convex-ue-as)
+::
+:: The angelscript command reads the fork's root from -engine, else
+:: %CONVEX_UEAS_ENGINE%. The fork patches CoreUObject and UHT, so its binaries
+:: never mix with a stock build: the command copies the Example project and
+:: the plugin to a short work path (UBT rejects paths over 260 characters)
+:: and builds there, leaving this checkout's Binaries alone.
 ::
 :: Close the Unreal Editor before building: a running editor locks the plugin
 :: DLLs, and reflection changes (UCLASS/UFUNCTION/delegate signatures) are not
@@ -31,17 +42,30 @@ if not "%COMMAND%"=="" shift /1
 if defined CONVEX_UE_ENGINE (set "ENGINE=%CONVEX_UE_ENGINE%") else (set "ENGINE=F:\UE5\UE_5.8")
 set "CONFIG=Development"
 set "OUTDIR=%REPO_ROOT%\Dist\Convex"
+if defined CONVEX_UEAS_WORK (set "WORKDIR=%CONVEX_UEAS_WORK%") else (set "WORKDIR=%LOCALAPPDATA%\convex-ue-as")
+set "ENGINE_EXPLICIT="
 
 :: --- parse options ----------------------------------------------------------
 :parse_args
 if "%~1"=="" goto args_done
 set "ARG=%~1"
-if /I "!ARG:~0,8!"=="-engine=" set "ENGINE=!ARG:~8!"
+if /I "!ARG:~0,8!"=="-engine=" (set "ENGINE=!ARG:~8!" & set "ENGINE_EXPLICIT=1")
 if /I "!ARG:~0,8!"=="-config=" set "CONFIG=!ARG:~8!"
 if /I "!ARG:~0,5!"=="-out="   set "OUTDIR=!ARG:~5!"
+if /I "!ARG:~0,6!"=="-work="  set "WORKDIR=!ARG:~6!"
 shift /1
 goto parse_args
 :args_done
+
+:: The fork lives at its own root; only the angelscript command uses it.
+if /I "%COMMAND%"=="angelscript" if not defined ENGINE_EXPLICIT (
+    if not defined CONVEX_UEAS_ENGINE (
+        echo [convex-ue] ERROR: set CONVEX_UEAS_ENGINE to the UnrealEngine-Angelscript root,
+        echo             or pass -engine=^<path^>.
+        exit /b 1
+    )
+    set "ENGINE=%CONVEX_UEAS_ENGINE%"
+)
 
 set "UPLUGIN=%REPO_ROOT%\Convex.uplugin"
 set "UPROJECT=%REPO_ROOT%\Example\ConvexExample.uproject"
@@ -74,7 +98,8 @@ if /I "%COMMAND%"=="dev"     goto do_dev
 if /I "%COMMAND%"=="test"    goto do_test
 if /I "%COMMAND%"=="package" goto do_package
 if /I "%COMMAND%"=="clean"   goto do_clean
-echo [convex-ue] ERROR: unknown command "%COMMAND%". Use dev, test, package or clean.
+if /I "%COMMAND%"=="angelscript" goto do_angelscript
+echo [convex-ue] ERROR: unknown command "%COMMAND%". Use dev, test, package, angelscript or clean.
 exit /b 1
 
 ::=============================================================================
@@ -147,6 +172,35 @@ if exist "%OUTDIR%\Intermediate" (
 echo [convex-ue] Packaged plugin: %OUTDIR%
 echo             Copy that folder into ^<YourProject^>\Plugins\Convex.
 echo             ^(Binaries\Win64\*.pdb may be deleted to shrink it further.^)
+exit /b 0
+
+::=============================================================================
+:do_angelscript
+set "WORK_PROJECT=%WORKDIR%\Example"
+echo [convex-ue] Copying the Example project and plugin to "%WORKDIR%"...
+if exist "%WORKDIR%" rmdir /S /Q "%WORKDIR%"
+robocopy "%REPO_ROOT%\Example" "%WORK_PROJECT%" /E /XD Binaries Intermediate Saved DerivedDataCache Plugins /NFL /NDL /NJH /NJS >nul
+robocopy "%REPO_ROOT%" "%WORK_PROJECT%\Plugins\Convex" /E /XD Binaries Intermediate Dist Example Tools .git /XF *.bat /NFL /NDL /NJH /NJS >nul
+if not exist "%WORK_PROJECT%\ConvexExample.uproject" (
+    echo [convex-ue] ERROR: copy failed.
+    exit /b 1
+)
+
+echo [convex-ue] Building ConvexExampleEditor ^(Win64 %CONFIG%^) with the fork at "%ENGINE%"...
+call "%BUILD_BAT%" ConvexExampleEditor Win64 %CONFIG% -project="%WORK_PROJECT%\ConvexExample.uproject" -WaitMutex -NoHotReload
+if errorlevel 1 (
+    echo [convex-ue] BUILD FAILED.
+    exit /b 1
+)
+
+echo [convex-ue] Running the AngelScript unit tests ^(Example\Script^)...
+"%EDITOR_CMD%" "%WORK_PROJECT%\ConvexExample.uproject" -run=AngelscriptTest ^
+    -unattended -nopause -nullrhi -nosplash -nosound -stdout
+if errorlevel 1 (
+    echo [convex-ue] SCRIPT TESTS FAILED ^(see %WORK_PROJECT%\Saved\Logs\ConvexExample.log^).
+    exit /b 1
+)
+echo [convex-ue] Script tests passed. Build copy kept at %WORKDIR%.
 exit /b 0
 
 ::=============================================================================

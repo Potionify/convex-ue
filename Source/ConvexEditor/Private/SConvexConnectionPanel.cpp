@@ -310,6 +310,7 @@ FReply SConvexConnectionPanel::OnGenerateApiClicked()
 	}
 
 	const FString OutDir = GetDefault<UConvexEditorSettings>()->CodegenOutputDir.Path;
+	const FString ScriptOutDir = GetDefault<UConvexEditorSettings>()->ScriptOutputDir.Path;
 	if (OutDir.IsEmpty())
 	{
 		Notify(TEXT("Set the codegen output directory (a folder inside one of your "
@@ -324,7 +325,7 @@ FReply SConvexConnectionPanel::OnGenerateApiClicked()
 	bCodegenRunning = true;
 	ConvexCodegenRunner::FetchApiSpec(Config.DeploymentUrl, Config.AdminKey,
 		[WeakThis = TWeakPtr<SConvexConnectionPanel>(SharedThis(this)), Notify, OutDir,
-			SourceLabel = Config.DeploymentUrl](bool bFetched, FString Body)
+			ScriptOutDir, SourceLabel = Config.DeploymentUrl](bool bFetched, FString Body)
 		{
 			if (const TSharedPtr<SConvexConnectionPanel> This = WeakThis.Pin())
 			{
@@ -337,6 +338,7 @@ FReply SConvexConnectionPanel::OnGenerateApiClicked()
 			}
 			ConvexCodegenRunner::FOptions Options;
 			Options.SourceLabel = SourceLabel;
+			Options.bEmitScript = !ScriptOutDir.IsEmpty();
 			TMap<FString, FString> Files;
 			if (const TOptional<FString> Error =
 					ConvexCodegenRunner::Generate(Body, Options, Files))
@@ -345,13 +347,17 @@ FReply SConvexConnectionPanel::OnGenerateApiClicked()
 				return;
 			}
 			if (const TOptional<FString> Error =
-					ConvexCodegenRunner::WriteFiles(OutDir, Files))
+					ConvexCodegenRunner::WriteFiles(OutDir, Files, ScriptOutDir))
 			{
 				Notify(*Error, false);
 				return;
 			}
-			Notify(FString::Printf(TEXT("Convex API generated: %d files into %s"),
-					   Files.Num(), *OutDir),
+			Notify(ScriptOutDir.IsEmpty()
+					   ? FString::Printf(TEXT("Convex API generated: %d files into %s"),
+							 Files.Num(), *OutDir)
+					   : FString::Printf(
+							 TEXT("Convex API generated: %d files into %s (script: %s)"),
+							 Files.Num(), *OutDir, *ScriptOutDir),
 				true);
 		});
 	return FReply::Handled();

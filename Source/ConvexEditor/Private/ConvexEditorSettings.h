@@ -51,4 +51,12 @@ public:
 	/// tool needed.
 	UPROPERTY(EditAnywhere, Config, Category = "Code Generation")
 	FDirectoryPath CodegenOutputDir;
+
+	/// Optional. When set, Generate API also writes AngelScript wrappers
+	/// (ConvexApi.as) here, for projects on the Hazelight
+	/// UnrealEngine-Angelscript fork. Point it at your project's Script
+	/// folder; the fork hot-reloads the file, no C++ build needed. Leave
+	/// empty on stock Unreal Engine.
+	UPROPERTY(EditAnywhere, Config, Category = "Code Generation")
+	FDirectoryPath ScriptOutputDir;
 };

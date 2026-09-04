@@ -73,6 +73,10 @@ public:
 	/// BlueprintCallable — the async nodes (Convex Query/Mutation/Run Action/
 	/// Subscribe, all taking FConvexArgs) are the one Blueprint surface; these
 	/// exist for the nodes and for C++ callers preferring dynamic delegates.
+	/// They carry the ScriptCallable metadata, which the Hazelight
+	/// UnrealEngine-Angelscript fork reads to bind them into script without
+	/// making them Blueprint nodes. Stock UE ignores the metadata.
+	UFUNCTION(meta = (ScriptCallable))
 	UConvexSubscription* Subscribe(const FString& Path, const TMap<FString, FConvexValue>& Args,
 		FConvexResultDelegate OnUpdate);
 
@@ -84,6 +88,7 @@ public:
 	/// growing, live-updating list. Args excludes paginationOpts (injected).
 	/// The returned object exposes OnUpdate/LoadMore/GetSnapshot; the passed
 	/// delegate is also bound to every snapshot update.
+	UFUNCTION(meta = (ScriptCallable))
 	UConvexPaginatedSubscription* SubscribePaginated(const FString& Path,
 		const TMap<FString, FConvexValue>& Args, int32 InitialNumItems,
 		FConvexPaginatedSnapshotDelegate OnUpdate);
@@ -97,10 +102,13 @@ public:
 	// One-shot operations over the realtime connection
 	// ------------------------------------------------------------------
 
+	UFUNCTION(meta = (ScriptCallable))
 	void Query(const FString& Path, const TMap<FString, FConvexValue>& Args, FConvexResultDelegate OnResult);
 
+	UFUNCTION(meta = (ScriptCallable))
 	void Mutation(const FString& Path, const TMap<FString, FConvexValue>& Args, FConvexResultDelegate OnResult);
 
+	UFUNCTION(meta = (ScriptCallable))
 	void Action(const FString& Path, const TMap<FString, FConvexValue>& Args, FConvexResultDelegate OnResult);
 
 	void QueryNative(const FString& Path, const TMap<FString, FConvexValue>& Args, FConvexResultNative OnResult);
@@ -111,10 +119,13 @@ public:
 	// One-shot operations over plain HTTP
 	// ------------------------------------------------------------------
 
+	UFUNCTION(meta = (ScriptCallable))
 	void HttpQuery(const FString& Path, const TMap<FString, FConvexValue>& Args, FConvexResultDelegate OnResult);
 
+	UFUNCTION(meta = (ScriptCallable))
 	void HttpMutation(const FString& Path, const TMap<FString, FConvexValue>& Args, FConvexResultDelegate OnResult);
 
+	UFUNCTION(meta = (ScriptCallable))
 	void HttpAction(const FString& Path, const TMap<FString, FConvexValue>& Args, FConvexResultDelegate OnResult);
 
 	void HttpQueryNative(const FString& Path, const TMap<FString, FConvexValue>& Args, FConvexResultNative OnResult);

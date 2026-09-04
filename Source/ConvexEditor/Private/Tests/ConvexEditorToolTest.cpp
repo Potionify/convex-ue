@@ -653,6 +653,24 @@ bool FConvexVendoredCodegenTest::RunTest(const FString&)
 			BpHeader->Contains(TEXT("UConvexApiCountersLibrary")));
 	}
 
+	// AngelScript wrappers are opt-in and routed by extension.
+	Options.bEmitScript = true;
+	TMap<FString, FString> WithScript;
+	TestFalse(TEXT("script generation succeeded"),
+		ConvexCodegenRunner::Generate(Spec, Options, WithScript).IsSet());
+	TestEqual(TEXT("five files with script"), WithScript.Num(), 5);
+	const FString* Script = WithScript.Find(TEXT("ConvexApi.as"));
+	if (TestNotNull(TEXT("script file present"), Script))
+	{
+		TestTrue(TEXT("script namespace"), Script->Contains(TEXT("namespace ConvexApi::Counters")));
+		TestTrue(TEXT("script calls the ScriptCallable client method"),
+			Script->Contains(TEXT("Client.Mutation(\"counters:increment\", Args, OnResult);")));
+		TestTrue(TEXT("optional arg becomes an all-arguments overload"),
+			Script->Contains(TEXT("float By, FConvexResultDelegate OnResult")));
+	}
+	TestTrue(TEXT("extension routing"), ConvexCodegenRunner::IsScriptFile(TEXT("ConvexApi.as")));
+	TestFalse(TEXT("extension routing"), ConvexCodegenRunner::IsScriptFile(TEXT("ConvexApi.h")));
+
 	// Malformed input must come back as an error, not an exception.
 	TMap<FString, FString> Unused;
 	TestTrue(TEXT("malformed spec yields error"),

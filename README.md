@@ -22,6 +22,9 @@ plugin is fully self-contained, no external dependencies).
 - **Codegen**: typed C++ and Blueprint wrappers for your deployed functions
   via [convex-ue-codegen](https://github.com/Potionify/convex-ue-codegen) —
   from the editor (Generate API), a `.bat`, or CI.
+- **AngelScript**: on the [Hazelight UnrealEngine-Angelscript](https://angelscript.hazelight.se)
+  fork the plugin builds unmodified, the client is callable from script, and
+  codegen can emit typed `.as` wrappers that hot-reload without a C++ build.
 
 ## Installation
 
@@ -163,7 +166,61 @@ Output is `ConvexApi.h/.cpp` (typed native wrappers, `TOptional<>` for
 optional args) plus `ConvexApiBP.h/.cpp` (one Blueprint node per function
 with typed pins), emitted into a folder inside one of your modules —
 `Example/Source/ConvexExample/ConvexApi` shows the output for the integration
-schema.
+schema. A script output directory (below) adds `ConvexApi.as`.
+
+## AngelScript
+
+The plugin supports the [Hazelight UnrealEngine-Angelscript](https://angelscript.hazelight.se)
+fork of UE 5.8. Nothing fork-specific is compiled in: the fork binds every
+`BlueprintCallable` function and `BlueprintType` type into script by
+reflection, so the subsystem, the value and args libraries, subscriptions and
+the generated Blueprint libraries are all reachable from `.as` files as they
+are. The client's dynamic-delegate methods (`Query`, `Mutation`, `Action`,
+`Subscribe`, `SubscribePaginated` and the HTTP one-shots) carry the fork's
+`ScriptCallable` metadata, which stock UE ignores. That is the whole
+difference.
+
+Function libraries become namespaces in script. `UConvexBlueprintLibrary`
+is `Convex::`, and a generated `UConvexApiCountersLibrary` is
+`ConvexApiCounters::`.
+
+```angelscript
+class AScoreboard : AActor
+{
+    UFUNCTION()
+    void OnScores(FConvexResult Result)
+    {
+        bool bOk = false;
+        if (Result.bSuccess) Print(Convex::ValueToJsonString(Result.Value, bOk));
+    }
+
+    UFUNCTION(BlueprintOverride)
+    void BeginPlay()
+    {
+        UConvexClient Client = UConvexSubsystem::Get().GetDefaultClient();
+        FConvexResultDelegate Handler;
+        Handler.BindUFunction(this, n"OnScores");
+        ConvexApi::Scores::WatchTop(Client, 10, Handler);
+    }
+}
+```
+
+`ConvexApi::Scores::WatchTop` comes from the generated `ConvexApi.as`.
+Set **Script output directory** in Editor Preferences > Plugins > Convex
+Editor (or pass `-ScriptOut=<dir>` to the commandlet, `-script-out <dir>`
+to `generate-convex-api.bat`) and Generate API writes the file there. Point
+it at your project's `Script/` folder. The wrappers only call the plugin,
+so they need no generated C++ and no build; the fork reloads them on save.
+Functions with optional arguments get two overloads, required-only and
+all-arguments, because the fork's `TOptional` cannot hold containers.
+
+Build against the fork with `convex-ue-build.bat angelscript` after setting
+`CONVEX_UEAS_ENGINE` to the fork's root. The command copies the Example
+project and the plugin to a work folder (fork binaries never mix with a
+stock build), builds there, and runs `Example/Script/ConvexApi_Test.as`
+through the fork's `AngelscriptTest` commandlet. Prebuilt binaries from
+`Dist/` do not load on the fork; it patches CoreUObject and UHT, so build
+the plugin from source there like everything else.
 
 ## Example project & live test
 

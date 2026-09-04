@@ -16,8 +16,8 @@ int32 UConvexCodegenCommandlet::Main(const FString& Params)
 	{
 		UE_LOG(LogConvexCodegen, Error,
 			TEXT("Usage: -run=ConvexCodegen -Out=<dir> [-Prefix=ConvexApi] "
-				 "[-EmitModule=<Name>] [-IncludeInternal] [-Url=<url> -DeployKey=<key>] "
-				 "[-EnvFile=<path>]"));
+				 "[-EmitModule=<Name>] [-ScriptOut=<dir>] [-IncludeInternal] "
+				 "[-Url=<url> -DeployKey=<key>] [-EnvFile=<path>]"));
 		return 1;
 	}
 
@@ -25,6 +25,10 @@ int32 UConvexCodegenCommandlet::Main(const FString& Params)
 	FParse::Value(*Params, TEXT("Prefix="), Options.Prefix);
 	FParse::Value(*Params, TEXT("EmitModule="), Options.EmitModule);
 	Options.bIncludeInternal = FParse::Param(*Params, TEXT("IncludeInternal"));
+	// AngelScript wrappers go to the project's Script/ folder, not the module.
+	FString ScriptOutDir;
+	FParse::Value(*Params, TEXT("ScriptOut="), ScriptOutDir);
+	Options.bEmitScript = !ScriptOutDir.IsEmpty();
 
 	// Explicit credentials win; otherwise resolve like the Convex tab does.
 	FString Url, Key, EnvFile;
@@ -80,7 +84,8 @@ int32 UConvexCodegenCommandlet::Main(const FString& Params)
 		UE_LOG(LogConvexCodegen, Error, TEXT("Codegen failed: %s"), **Error);
 		return 1;
 	}
-	if (const TOptional<FString> Error = ConvexCodegenRunner::WriteFiles(OutDir, Files))
+	if (const TOptional<FString> Error =
+			ConvexCodegenRunner::WriteFiles(OutDir, Files, ScriptOutDir))
 	{
 		UE_LOG(LogConvexCodegen, Error, TEXT("%s"), **Error);
 		return 1;
@@ -88,5 +93,9 @@ int32 UConvexCodegenCommandlet::Main(const FString& Params)
 
 	UE_LOG(LogConvexCodegen, Display, TEXT("Generated %d file(s) into %s"), Files.Num(),
 		*OutDir);
+	if (!ScriptOutDir.IsEmpty())
+	{
+		UE_LOG(LogConvexCodegen, Display, TEXT("AngelScript wrappers into %s"), *ScriptOutDir);
+	}
 	return 0;
 }

@@ -19,6 +19,10 @@ namespace ConvexCodegenRunner
 		bool bIncludeInternal = false;
 		/// When set, additionally emit <Name>.Build.cs + <Name>Module.cpp.
 		FString EmitModule;
+		/// Also emit <Prefix>.as, AngelScript wrappers for the Hazelight
+		/// UnrealEngine-Angelscript fork. They belong in the project's
+		/// Script/ folder, so WriteFiles routes them to ScriptOutDir.
+		bool bEmitScript = false;
 		/// Provenance shown in the generated file headers (deployment URL).
 		FString SourceLabel = TEXT("unknown");
 	};
@@ -35,7 +39,13 @@ namespace ConvexCodegenRunner
 	void FetchApiSpec(const FString& DeploymentUrl, const FString& AdminKey,
 		TFunction<void(bool, FString)> OnDone);
 
-	/// Write generated files into a directory (created if missing). Returns
-	/// the error message on failure, unset on success.
-	TOptional<FString> WriteFiles(const FString& OutDir, const TMap<FString, FString>& Files);
+	/// True for generated files that belong in the project's Script/ folder
+	/// (the AngelScript wrappers) rather than in the C++ output directory.
+	bool IsScriptFile(const FString& FileName);
+
+	/// Write generated files into a directory (created if missing). Script
+	/// files go to ScriptOutDir instead when it is set. Returns the error
+	/// message on failure, unset on success.
+	TOptional<FString> WriteFiles(const FString& OutDir, const TMap<FString, FString>& Files,
+		const FString& ScriptOutDir = FString());
 }
