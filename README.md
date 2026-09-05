@@ -3,12 +3,6 @@
 [![Vendor sync](https://github.com/Potionify/convex-ue/actions/workflows/vendor-sync.yml/badge.svg)](https://github.com/Potionify/convex-ue/actions/workflows/vendor-sync.yml)
 [![License](https://img.shields.io/github/license/Potionify/convex-ue)](LICENSE)
 
-https://github.com/user-attachments/assets/89ad4821-b9e0-409b-b529-1a19a8aff522
-
-A 35-second demo: a document edited in the editor's Convex tab shows up in
-the running game, a message sent from the game shows up in the tab, then the
-Functions, Logs and Traffic sections and Generate API.
-
 A community [Convex](https://convex.dev) client plugin for Unreal Engine 5.8,
 maintained by Potionify. Not an official Convex product. The protocol core is
 [convex-cpp](https://github.com/Potionify/convex-cpp), vendored into the
@@ -43,6 +37,14 @@ emits typed `.as` wrappers.
 Development and testing happen on Windows with the Win64 editor. Nothing
 platform-specific is compiled in, so other platforms build from the same
 source, but nobody has exercised them yet. Reports are welcome.
+
+## Demo
+
+https://github.com/user-attachments/assets/89ad4821-b9e0-409b-b529-1a19a8aff522
+
+Thirty-five seconds, no sound. A document edited in the editor's Convex tab
+shows up in the running game, a message sent from the game shows up in the
+tab, then the Functions, Logs and Traffic sections and Generate API.
 
 ## Installation
 
