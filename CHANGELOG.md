@@ -4,7 +4,7 @@ Notable changes per release. Versions follow [semantic versioning](https://semve
 with the caveat that 0.x means the API may still move between minor versions.
 The vendored convex-cpp commit is recorded in `Source/ConvexCore/convex-cpp.version.txt`.
 
-## [0.2.0] — Unreleased
+## [0.2.0] — 2026-09-04
 
 ### Added
 
