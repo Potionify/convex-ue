@@ -14,6 +14,9 @@ public class ConvexExample : ModuleRules
 			"CoreUObject",
 			"Engine",
 			"InputCore",
+			"UMG",
+			"Slate",
+			"SlateCore",
 			"ConvexClient",
 		});
 

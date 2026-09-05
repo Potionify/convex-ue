@@ -26,6 +26,10 @@ The vendored convex-cpp commit is recorded in `Source/ConvexCore/convex-cpp.vers
 - Live script tests against the local backend, run by
   `convex-ue-build.bat angelscript`, and a second generated script file
   in the Example project that covers typed returns.
+- A chat demo in the Example project, C++ only: `UConvexChatWidget`
+  subscribes to `messages:list` and sends with `messages:send`, and
+  `AConvexChatGameMode` puts it on screen in Play In Editor. It is the
+  scene in the README's demo video.
 
 ### Changed
 
