@@ -3,8 +3,7 @@
 [![Vendor sync](https://github.com/Potionify/convex-ue/actions/workflows/vendor-sync.yml/badge.svg)](https://github.com/Potionify/convex-ue/actions/workflows/vendor-sync.yml)
 [![License](https://img.shields.io/github/license/Potionify/convex-ue)](LICENSE)
 
-<!-- demo video: replace this comment with the URL GitHub gives the uploaded
-     convex-ue-demo.mp4, on a line of its own, so it renders inline. -->
+https://github.com/user-attachments/assets/89ad4821-b9e0-409b-b529-1a19a8aff522
 
 A 35-second demo: a document edited in the editor's Convex tab shows up in
 the running game, a message sent from the game shows up in the tab, then the
